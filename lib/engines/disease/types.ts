@@ -1,9 +1,3 @@
-// ─────────────────────────────────────────────
-// KAIROS — Disease Engine Types
-// Medical truth only. No UI. No patient identity.
-// No hardcoded medicine definitions.
-// ─────────────────────────────────────────────
-
 import {
   BaseEntity,
   Range,
@@ -29,7 +23,6 @@ import {
   ClinicalImportance,
   TreatmentPriority,
   TreatmentTiming,
-  RouteOfAdministration,
   ComplicationCategory,
   ComplicationOnset,
   OutcomeType,
@@ -37,8 +30,6 @@ import {
 } from "../../types/enums";
 
 import { TreatmentReference } from "../medicine/types";
-
-// ─── Symptom ──────────────────────────────────
 
 export interface Symptom {
   id:                  string;
@@ -55,8 +46,6 @@ export interface Symptom {
   patientPhrases:      string[];
 }
 
-// ─── Vital Sign ───────────────────────────────
-
 export interface VitalSign {
   parameter:      string;
   unit:           string;
@@ -70,21 +59,15 @@ export interface VitalSign {
   specialNotes:   string[];
 }
 
-// ─── ECG Finding ──────────────────────────────
-// Structured so Hospital Engine can
-// render an actual ECG waveform in future.
-
 export interface ECGFinding {
-  leads:                string[];
-  finding:              string;
-  interpretation:       Interpretation;
-  probability:          number;       // 0.0–1.0
-  severity:             Severity[];
-  clinicalImportance:   ClinicalImportance;
-  locationDependency?:  InfarctLocation[];
+  leads:               string[];
+  finding:             string;
+  interpretation:      Interpretation;
+  probability:         number;
+  severity:            Severity[];
+  clinicalImportance:  ClinicalImportance;
+  locationDependency?: InfarctLocation[];
 }
-
-// ─── Investigation Result ─────────────────────
 
 export interface InvestigationResult {
   severity:         Severity | "normal";
@@ -93,8 +76,6 @@ export interface InvestigationResult {
   educationalNotes: string;
   redFlags?:        string[];
 }
-
-// ─── Investigation ────────────────────────────
 
 export interface Investigation {
   id:                 string;
@@ -108,17 +89,15 @@ export interface Investigation {
   kineticProfile?:    KineticProfile;
   falsePositives?:    string[];
   results: {
-    normal:           InvestigationResult;
-    mild:             InvestigationResult;
-    moderate:         InvestigationResult;
-    severe:           InvestigationResult;
+    normal:   InvestigationResult;
+    mild:     InvestigationResult;
+    moderate: InvestigationResult;
+    severe:   InvestigationResult;
   };
   redFlagFindings:    string[];
   serialTestingRule?: SerialTestingRule;
   specialNotes:       string[];
 }
-
-// ─── Complication ─────────────────────────────
 
 export interface Complication {
   id:                  string;
@@ -126,41 +105,37 @@ export interface Complication {
   category:            ComplicationCategory;
   onset:               ComplicationOnset;
   timing: {
-    hoursAfterEvent:   Range;
+    hoursAfterEvent: Range;
   };
   frequency:           Frequency;
   severityRequired:    Severity[];
   locationDependency?: InfarctLocation[];
-  prerequisites:       string[];      // conditions that must be true
+  prerequisites:       string[];
   redFlag:             boolean;
   educationalNotes:    string;
 }
 
-// ─── Outcome ──────────────────────────────────
-
 export interface OutcomeScenario {
-  type:             OutcomeType;
-  baseProbability:  number;       // 0.0–1.0
-  conditions:       string[];     // what must have happened
+  type:            OutcomeType;
+  baseProbability: number;
+  conditions:      string[];
 }
 
 export interface DiseaseOutcome {
-  scenarios:        OutcomeScenario[];
-  modifiers:        OutcomeModifier[];
-  deathIsAllowed:   boolean;
-  deathIsCommon:    boolean;
-  deathNote:        string;
+  scenarios:      OutcomeScenario[];
+  modifiers:      OutcomeModifier[];
+  deathIsAllowed: boolean;
+  deathIsCommon:  boolean;
+  deathNote:      string;
 }
 
-// ─── Reflection Hook ──────────────────────────
-
 export interface ReflectionHook {
-  id:          string;
-  trigger:     string;
-  importance:  ClinicalImportance;
-  category:    ScoreCategory;
-  weight:      number;          // out of 100 total
-  message:     string;
+  id:         string;
+  trigger:    string;
+  importance: ClinicalImportance;
+  category:   ScoreCategory;
+  weight:     number;
+  message:    string;
 }
 
 export interface PerformanceScoring {
@@ -169,23 +144,19 @@ export interface PerformanceScoring {
   totalPoints: number;
 }
 
-// ─── Disease ──────────────────────────────────
-// The complete Disease Engine contract.
-// No patient data. No UI. No medicine definitions.
-
 export interface Disease extends BaseEntity {
-  name:             string;
-  icdCode:          string;
-  category:         string;
-  symptoms:         Symptom[];
-  vitalSigns:       VitalSign[];
-  investigations:   Investigation[];
+  name:            string;
+  icdCode:         string;
+  category:        string;
+  symptoms:        Symptom[];
+  vitalSigns:      VitalSign[];
+  investigations:  Investigation[];
   treatments: {
-    correct:        TreatmentReference[];
-    incorrect:      IncorrectChoice[];
+    correct:   TreatmentReference[];
+    incorrect: IncorrectChoice[];
   };
-  complications:    Complication[];
-  outcome:          DiseaseOutcome;
-  reflectionHooks:  ReflectionHook[];
-  scoring:          PerformanceScoring;
+  complications:   Complication[];
+  outcome:         DiseaseOutcome;
+  reflectionHooks: ReflectionHook[];
+  scoring:         PerformanceScoring;
 }

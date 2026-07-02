@@ -1,0 +1,195 @@
+[1mdiff --git a/lib/engines/disease/types.ts b/lib/engines/disease/types.ts[m
+[1mindex ea21c32..7f779b1 100644[m
+[1m--- a/lib/engines/disease/types.ts[m
+[1m+++ b/lib/engines/disease/types.ts[m
+[36m@@ -1,9 +1,3 @@[m
+[31m-// ─────────────────────────────────────────────[m
+[31m-// KAIROS — Disease Engine Types[m
+[31m-// Medical truth only. No UI. No patient identity.[m
+[31m-// No hardcoded medicine definitions.[m
+[31m-// ─────────────────────────────────────────────[m
+[31m-[m
+ import {[m
+   BaseEntity,[m
+   Range,[m
+[36m@@ -29,7 +23,6 @@[m [mimport {[m
+   ClinicalImportance,[m
+   TreatmentPriority,[m
+   TreatmentTiming,[m
+[31m-  RouteOfAdministration,[m
+   ComplicationCategory,[m
+   ComplicationOnset,[m
+   OutcomeType,[m
+[36m@@ -38,8 +31,6 @@[m [mimport {[m
+ [m
+ import { TreatmentReference } from "../medicine/types";[m
+ [m
+[31m-// ─── Symptom ──────────────────────────────────[m
+[31m-[m
+ export interface Symptom {[m
+   id:                  string;[m
+   name:                string;[m
+[36m@@ -55,8 +46,6 @@[m [mexport interface Symptom {[m
+   patientPhrases:      string[];[m
+ }[m
+ [m
+[31m-// ─── Vital Sign ───────────────────────────────[m
+[31m-[m
+ export interface VitalSign {[m
+   parameter:      string;[m
+   unit:           string;[m
+[36m@@ -70,22 +59,16 @@[m [mexport interface VitalSign {[m
+   specialNotes:   string[];[m
+ }[m
+ [m
+[31m-// ─── ECG Finding ──────────────────────────────[m
+[31m-// Structured so Hospital Engine can[m
+[31m-// render an actual ECG waveform in future.[m
+[31m-[m
+ export interface ECGFinding {[m
+[31m-  leads:                string[];[m
+[31m-  finding:              string;[m
+[31m-  interpretation:       Interpretation;[m
+[31m-  probability:          number;       // 0.0–1.0[m
+[31m-  severity:             Severity[];[m
+[31m-  clinicalImportance:   ClinicalImportance;[m
+[31m-  locationDependency?:  InfarctLocation[];[m
+[32m+[m[32m  leads:               string[];[m
+[32m+[m[32m  finding:             string;[m
+[32m+[m[32m  interpretation:      Interpretation;[m
+[32m+[m[32m  probability:         number;[m
+[32m+[m[32m  severity:            Severity[];[m
+[32m+[m[32m  clinicalImportance:  ClinicalImportance;[m
+[32m+[m[32m  locationDependency?: InfarctLocation[];[m
+ }[m
+ [m
+[31m-// ─── Investigation Result ─────────────────────[m
+[31m-[m
+ export interface InvestigationResult {[m
+   severity:         Severity | "normal";[m
+   findings:         FindingValue[];[m
+[36m@@ -94,8 +77,6 @@[m [mexport interface InvestigationResult {[m
+   redFlags?:        string[];[m
+ }[m
+ [m
+[31m-// ─── Investigation ────────────────────────────[m
+[31m-[m
+ export interface Investigation {[m
+   id:                 string;[m
+   name:               string;[m
+[36m@@ -108,59 +89,53 @@[m [mexport interface Investigation {[m
+   kineticProfile?:    KineticProfile;[m
+   falsePositives?:    string[];[m
+   results: {[m
+[31m-    normal:           InvestigationResult;[m
+[31m-    mild:             InvestigationResult;[m
+[31m-    moderate:         InvestigationResult;[m
+[31m-    severe:           InvestigationResult;[m
+[32m+[m[32m    normal:   InvestigationResult;[m
+[32m+[m[32m    mild:     InvestigationResult;[m
+[32m+[m[32m    moderate: InvestigationResult;[m
+[32m+[m[32m    severe:   InvestigationResult;[m
+   };[m
+   redFlagFindings:    string[];[m
+   serialTestingRule?: SerialTestingRule;[m
+   specialNotes:       string[];[m
+ }[m
+ [m
+[31m-// ─── Complication ─────────────────────────────[m
+[31m-[m
+ export interface Complication {[m
+   id:                  string;[m
+   name:                string;[m
+   category:            ComplicationCategory;[m
+   onset:               ComplicationOnset;[m
+   timing: {[m
+[31m-    hoursAfterEvent:   Range;[m
+[32m+[m[32m    hoursAfterEvent: Range;[m
+   };[m
+   frequency:           Frequency;[m
+   severityRequired:    Severity[];[m
+   locationDependency?: InfarctLocation[];[m
+[31m-  prerequisites:       string[];      // conditions that must be true[m
+[32m+[m[32m  prerequisites:       string[];[m
+   redFlag:             boolean;[m
+   educationalNotes:    string;[m
+ }[m
+ [m
+[31m-// ─── Outcome ──────────────────────────────────[m
+[31m-[m
+ export interface OutcomeScenario {[m
+[31m-  type:             OutcomeType;[m
+[31m-  baseProbability:  number;       // 0.0–1.0[m
+[31m-  conditions:       string[];     // what must have happened[m
+[32m+[m[32m  type:            OutcomeType;[m
+[32m+[m[32m  baseProbability: number;[m
+[32m+[m[32m  conditions:      string[];[m
+ }[m
+ [m
+ export interface DiseaseOutcome {[m
+[31m-  scenarios:        OutcomeScenario[];[m
+[31m-  modifiers:        OutcomeModifier[];[m
+[31m-  deathIsAllowed:   boolean;[m
+[31m-  deathIsCommon:    boolean;[m
+[31m-  deathNote:        string;[m
+[32m+[m[32m  scenarios:      OutcomeScenario[];[m
+[32m+[m[32m  modifiers:      OutcomeModifier[];[m
+[32m+[m[32m  deathIsAllowed: boolean;[m
+[32m+[m[32m  deathIsCommon:  boolean;[m
+[32m+[m[32m  deathNote:      string;[m
+ }[m
+ [m
+[31m-// ─── Reflection Hook ──────────────────────────[m
+[31m-[m
+ export interface ReflectionHook {[m
+[31m-  id:          string;[m
+[31m-  trigger:     string;[m
+[31m-  importance:  ClinicalImportance;[m
+[31m-  category:    ScoreCategory;[m
+[31m-  weight:      number;          // out of 100 total[m
+[31m-  message:     string;[m
+[32m+[m[32m  id:         string;[m
+[32m+[m[32m  trigger:    string;[m
+[32m+[m[32m  importance: ClinicalImportance;[m
+[32m+[m[32m  category:   ScoreCategory;[m
+[32m+[m[32m  weight:     number;[m
+[32m+[m[32m  message:    string;[m
+ }[m
+ [m
+ export interface PerformanceScoring {[m
+[36m@@ -169,23 +144,19 @@[m [mexport interface PerformanceScoring {[m
+   totalPoints: number;[m
+ }[m
+ [m
+[31m-// ─── Disease ──────────────────────────────────[m
+[31m-// The complete Disease Engine contract.[m
+[31m-// No patient data. No UI. No medicine definitions.[m
+[31m-[m
+ export interface Disease extends BaseEntity {[m
+[31m-  name:             string;[m
+[31m-  icdCode:          string;[m
+[31m-  category:         string;[m
+[31m-  symptoms:         Symptom[];[m
+[31m-  vitalSigns:       VitalSign[];[m
+[31m-  investigations:   Investigation[];[m
+[32m+[m[32m  name:            string;[m
+[32m+[m[32m  icdCode:         string;[m
+[32m+[m[32m  category:        string;[m
+[32m+[m[32m  symptoms:        Symptom[];[m
+[32m+[m[32m  vitalSigns:      VitalSign[];[m
+[32m+[m[32m  investigations:  Investigation[];[m
+   treatments: {[m
+[31m-    correct:        TreatmentReference[];[m
+[31m-    incorrect:      IncorrectChoice[];[m
+[32m+[m[32m    correct:   TreatmentReference[];[m
+[32m+[m[32m    incorrect: IncorrectChoice[];[m
+   };[m
+[31m-  complications:    Complication[];[m
+[31m-  outcome:          DiseaseOutcome;[m
+[31m-  reflectionHooks:  ReflectionHook[];[m
+[31m-  scoring:          PerformanceScoring;[m
+[32m+[m[32m  complications:   Complication[];[m
+[32m+[m[32m  outcome:         DiseaseOutcome;[m
+[32m+[m[32m  reflectionHooks: ReflectionHook[];[m
+[32m+[m[32m  scoring:         PerformanceScoring;[m
+ }[m
