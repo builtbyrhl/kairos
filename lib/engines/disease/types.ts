@@ -1,3 +1,24 @@
+// ─────────────────────────────────────────────
+// KAIROS — Disease Engine Types
+//
+// The single canonical source of truth for all
+// disease-related interfaces in Kairos.
+//
+// Rules:
+//   • Medical truth only. No UI. No patient identity.
+//   • No hardcoded medicine definitions.
+//     Treatments reference Medicine Engine by ID only.
+//   • Individual disease modules use:
+//       Pick<Disease, "id" | ...>
+//       Disease["symptoms"]
+//       Disease["vitalSigns"]
+//     Assembly and full interface satisfaction
+//     happens only in each disease's index.ts.
+//
+// Every other engine imports FROM this file.
+// This file never imports from other engines.
+// ─────────────────────────────────────────────
+
 import {
   BaseEntity,
   Range,
@@ -21,8 +42,6 @@ import {
   UnlockMethod,
   Reliability,
   ClinicalImportance,
-  TreatmentPriority,
-  TreatmentTiming,
   ComplicationCategory,
   ComplicationOnset,
   OutcomeType,
@@ -31,132 +50,158 @@ import {
 
 import { TreatmentReference } from "../medicine/types";
 
+// ─── Symptom ──────────────────────────────────
+
 export interface Symptom {
-  id:                  string;
-  name:                string;
-  typicality:          Typicality;
-  frequency:           Frequency;
-  severity:            Severity[];
-  redFlag:             boolean;
-  clinicalImportance:  ClinicalImportance;
-  reliability:         Reliability;
-  locationDependency?: InfarctLocation[];
-  unlockMethod:        UnlockMethod;
-  specialNotes:        string[];
-  patientPhrases:      string[];
+  readonly id:                  string;
+  readonly name:                string;
+  readonly typicality:          Typicality;
+  readonly frequency:           Frequency;
+  readonly severity:            Severity[];
+  readonly redFlag:             boolean;
+  readonly clinicalImportance:  ClinicalImportance;
+  readonly reliability:         Reliability;
+  readonly locationDependency?: InfarctLocation[];
+  readonly unlockMethod:        UnlockMethod;
+  readonly specialNotes:        string[];
+  readonly patientPhrases:      string[];
 }
+
+// ─── Vital Sign ───────────────────────────────
 
 export interface VitalSign {
-  parameter:      string;
-  unit:           string;
-  normal:         { range: Range };
-  mild:           { range: Range };
-  moderate:       { range: Range };
-  severe:         { range: Range };
-  exceptions?:    Exception[];
-  redFlagBelow?:  number;
-  redFlagAbove?:  number;
-  specialNotes:   string[];
+  readonly parameter:     string;
+  readonly unit:          string;
+  readonly normal:        { range: Range };
+  readonly mild:          { range: Range };
+  readonly moderate:      { range: Range };
+  readonly severe:        { range: Range };
+  readonly exceptions?:   Exception[];
+  readonly redFlagBelow?: number;
+  readonly redFlagAbove?: number;
+  readonly specialNotes:  string[];
 }
+
+// ─── ECG Finding ──────────────────────────────
+// Structured so Hospital Engine can render an
+// actual ECG waveform in future versions.
+// interpretation and clinicalImportance are stored
+// as their enum types here. The Encounter/Hospital
+// Engine layer casts them to string for display.
 
 export interface ECGFinding {
-  leads:               string[];
-  finding:             string;
-  interpretation:      Interpretation;
-  probability:         number;
-  severity:            Severity[];
-  clinicalImportance:  ClinicalImportance;
-  locationDependency?: InfarctLocation[];
+  readonly leads:               string[];
+  readonly finding:             string;
+  readonly interpretation:      Interpretation;
+  readonly probability:         number;        // 0.0–1.0
+  readonly severity:            Severity[];
+  readonly clinicalImportance:  ClinicalImportance;
+  readonly locationDependency?: InfarctLocation[];
 }
+
+// ─── Investigation Result ─────────────────────
 
 export interface InvestigationResult {
-  severity:         Severity | "normal";
-  findings:         FindingValue[];
-  ecgFindings?:     ECGFinding[];
-  educationalNotes: string;
-  redFlags?:        string[];
+  readonly severity:         Severity | "normal";
+  readonly findings:         FindingValue[];
+  readonly ecgFindings?:     ECGFinding[];
+  readonly educationalNotes: string;
+  readonly redFlags?:        string[];
 }
+
+// ─── Investigation ────────────────────────────
 
 export interface Investigation {
-  id:                 string;
-  name:               string;
-  type:               InvestigationType;
-  priority:           InvestigationPriority;
-  timing:             InvestigationTiming;
-  unlockMethod:       UnlockMethod;
-  reliability:        Reliability;
-  probability:        number;
-  kineticProfile?:    KineticProfile;
-  falsePositives?:    string[];
-  results: {
-    normal:   InvestigationResult;
-    mild:     InvestigationResult;
-    moderate: InvestigationResult;
-    severe:   InvestigationResult;
+  readonly id:                 string;
+  readonly name:               string;
+  readonly type:               InvestigationType;
+  readonly priority:           InvestigationPriority;
+  readonly timing:             InvestigationTiming;
+  readonly unlockMethod:       UnlockMethod;
+  readonly reliability:        Reliability;
+  readonly probability:        number;
+  readonly kineticProfile?:    KineticProfile;
+  readonly falsePositives?:    string[];
+  readonly results: {
+    readonly normal:   InvestigationResult;
+    readonly mild:     InvestigationResult;
+    readonly moderate: InvestigationResult;
+    readonly severe:   InvestigationResult;
   };
-  redFlagFindings:    string[];
-  serialTestingRule?: SerialTestingRule;
-  specialNotes:       string[];
+  readonly redFlagFindings:    string[];
+  readonly serialTestingRule?: SerialTestingRule;
+  readonly specialNotes:       string[];
 }
+
+// ─── Complication ─────────────────────────────
 
 export interface Complication {
-  id:                  string;
-  name:                string;
-  category:            ComplicationCategory;
-  onset:               ComplicationOnset;
-  timing: {
-    hoursAfterEvent: Range;
+  readonly id:                  string;
+  readonly name:                string;
+  readonly category:            ComplicationCategory;
+  readonly onset:               ComplicationOnset;
+  readonly timing: {
+    readonly hoursAfterEvent: Range;
   };
-  frequency:           Frequency;
-  severityRequired:    Severity[];
-  locationDependency?: InfarctLocation[];
-  prerequisites:       string[];
-  redFlag:             boolean;
-  educationalNotes:    string;
+  readonly frequency:           Frequency;
+  readonly severityRequired:    Severity[];
+  readonly locationDependency?: InfarctLocation[];
+  readonly prerequisites:       string[];
+  readonly redFlag:             boolean;
+  readonly educationalNotes:    string;
 }
 
+// ─── Outcome ──────────────────────────────────
+
 export interface OutcomeScenario {
-  type:            OutcomeType;
-  baseProbability: number;
-  conditions:      string[];
+  readonly type:            OutcomeType;
+  readonly baseProbability: number;
+  readonly conditions:      string[];
 }
 
 export interface DiseaseOutcome {
-  scenarios:      OutcomeScenario[];
-  modifiers:      OutcomeModifier[];
-  deathIsAllowed: boolean;
-  deathIsCommon:  boolean;
-  deathNote:      string;
+  readonly scenarios:      OutcomeScenario[];
+  readonly modifiers:      OutcomeModifier[];
+  readonly deathIsAllowed: boolean;
+  readonly deathIsCommon:  boolean;
+  readonly deathNote:      string;
 }
 
+// ─── Reflection ───────────────────────────────
+
 export interface ReflectionHook {
-  id:         string;
-  trigger:    string;
-  importance: ClinicalImportance;
-  category:   ScoreCategory;
-  weight:     number;
-  message:    string;
+  readonly id:         string;
+  readonly trigger:    string;
+  readonly importance: ClinicalImportance;
+  readonly category:   ScoreCategory;
+  readonly weight:     number;
+  readonly message:    string;
 }
 
 export interface PerformanceScoring {
-  algorithm:   "weighted";
-  weights:     { [key in ScoreCategory]?: number };
-  totalPoints: number;
+  readonly algorithm:   "weighted";
+  readonly weights:     { [key in ScoreCategory]?: number };
+  readonly totalPoints: number;
 }
 
+// ─── Disease ──────────────────────────────────
+// The complete canonical Disease contract.
+// Satisfied only in each disease's index.ts.
+// Modules use Pick<Disease,...> or Disease["field"].
+
 export interface Disease extends BaseEntity {
-  name:            string;
-  icdCode:         string;
-  category:        string;
-  symptoms:        Symptom[];
-  vitalSigns:      VitalSign[];
-  investigations:  Investigation[];
-  treatments: {
-    correct:   TreatmentReference[];
-    incorrect: IncorrectChoice[];
+  readonly name:            string;
+  readonly icdCode:         string;
+  readonly category:        string;
+  readonly symptoms:        Symptom[];
+  readonly vitalSigns:      VitalSign[];
+  readonly investigations:  Investigation[];
+  readonly treatments: {
+    readonly correct:   TreatmentReference[];
+    readonly incorrect: IncorrectChoice[];
   };
-  complications:   Complication[];
-  outcome:         DiseaseOutcome;
-  reflectionHooks: ReflectionHook[];
-  scoring:         PerformanceScoring;
+  readonly complications:   Complication[];
+  readonly outcome:         DiseaseOutcome;
+  readonly reflectionHooks: ReflectionHook[];
+  readonly scoring:         PerformanceScoring;
 }

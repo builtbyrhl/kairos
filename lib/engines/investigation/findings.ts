@@ -32,8 +32,7 @@
 // ─────────────────────────────────────────────
 
 import { SeededRNG }      from "../../shared/rng";
-import { ECGFinding } from "../disease/types";
-import { FindingValue } from "../../types/common";
+import { FindingValue, ECGFinding } from "../disease/types";
 import { InfarctLocation }          from "../../types/enums";
 import { isQualitativeFinding }     from "./kinetics";
 import { ResolvedFinding, GeneratedECGFinding } from "./types";
@@ -202,27 +201,22 @@ export function generateFindings(
  * Callers pass ecgFindings from the already-resolved result tier.
  */
 export function generateECGFindings(
-  ecgFindings:     readonly ECGFinding[],
-  infarctLocation: InfarctLocation | undefined,
-  rng:             SeededRNG
-): readonly GeneratedECGFinding[] {
-  return ecgFindings
-    .filter(f => {
-      // No location restriction — always include
-      if (!f.locationDependency || f.locationDependency.length === 0) return true;
+    ecgFindings:     readonly ECGFinding[],
+      infarctLocation: InfarctLocation | undefined,
+        rng:             SeededRNG
+        ): readonly GeneratedECGFinding[] {
+          return ecgFindings
+              .filter(f => {
+                    if (!f.locationDependency || f.locationDependency.length === 0) return true;
+                          if (infarctLocation !== undefined && f.locationDependency.includes(infarctLocation)) return true;
+                                return false;
+                                    })
+                                        .filter(f => rng.chance(f.probability))
+                                            .map(f => ({
+                                                  leads:              f.leads,
+                                                        finding:            f.finding,
+                                                              interpretation:     f.interpretation as string,
+                                                                    clinicalImportance: f.clinicalImportance as string,
+                                                                        }));
+                                                                        }
 
-      // Location matches exactly
-      if (infarctLocation && f.locationDependency.includes(infarctLocation)) return true;
-
-      // Location mismatch or unknown — anatomical variability fallback
-      const fallbackProbability = infarctLocation !== undefined ? 0.10 : 0.05;
-      return rng.chance(fallbackProbability);
-    })
-    .filter(f => rng.chance(f.probability))
-    .map(f => ({
-      leads:              f.leads,
-      finding:            f.finding,
-      interpretation:     f.interpretation     as string,
-      clinicalImportance: f.clinicalImportance as string,
-    }));
-}
