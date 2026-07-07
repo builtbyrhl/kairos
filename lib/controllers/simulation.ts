@@ -3,45 +3,49 @@
 //
 // Orchestration layer only. No business logic.
 //
-// This is the only file in the codebase that
-// imports from both Hospital Engine and
-// Investigation Engine. This design prevents
-// circular dependencies between those engines.
+// This is the only file that imports from both:
+//   • Hospital Engine + Investigation Engine
+//   • Hospital Engine + Treatment Engine
 //
-// Responsibilities:
-//   • Receive an ordered investigation ID and context.
-//   • Call resolveInvestigation() from Investigation Engine.
-//   • On success: map InvestigationReport → ResolvedInvestigation.
-//   • Call recordInvestigationResult() on Hospital Engine.
-//   • Return updated StudentSession, a student-safe report,
-//     and post-case data for the future Reflection Engine.
-//   • On failure: propagate InvestigationError unchanged.
+// This design prevents circular dependencies
+// between those engines.
+//
+// Investigation flow:
+//   resolveOrderedInvestigation() orchestrates:
+//     resolveInvestigation() → recordInvestigationResult()
+//
+// Treatment flow:
+//   resolveAdministeredTreatment() orchestrates:
+//     evaluateTreatment() → recordTreatmentResult()
 //
 // What this controller deliberately does NOT own:
-//   • Resolution logic       — Investigation Engine.
-//   • State transitions      — Hospital Engine.
-//   • Scoring                — future Scoring Engine.
-//   • Reflection content     — future Reflection Engine.
-//   • Treatment evaluation   — future Treatment Engine.
+//   • Resolution logic      — Investigation Engine
+//   • Evaluation logic      — Treatment Engine
+//   • State transitions     — Hospital Engine
+//   • Scoring               — future Scoring Engine
+//   • Reflection content    — future Reflection Engine
 //
 // Protected field handling:
-//   resolvedSeverityTier → stored in ResolvedInvestigation
-//                          for Scoring Engine. Never in student report.
-//   educationalNotes     → returned as PostCaseInvestigationData.
-//                          Caller must hold this and release it only
-//                          after encounter completion via Reflection Engine.
-//   falsePositives       → same as educationalNotes.
+//   Investigation:
+//     resolvedSeverityTier → ResolvedInvestigation (Scoring Engine)
+//     educationalNotes     → PostCaseInvestigationData (Reflection Engine)
+//     falsePositives       → PostCaseInvestigationData (Reflection Engine)
+//
+//   Treatment:
+//     correctness          → PostCaseTreatmentData (Reflection Engine)
+//     educationalNotes     → PostCaseTreatmentData (Reflection Engine)
 //
 // Error propagation:
-//   InvestigationError variants are never swallowed or converted.
-//   ORDER_NOT_FOUND, INVESTIGATION_NOT_FOUND, and NOT_YET_RESULTED
-//   are returned as-is inside SimulationResult.
+//   All engine errors propagated unchanged.
+//   Never swallowed or converted to unrelated types.
 // ─────────────────────────────────────────────
 
 import {
   StudentSession,
   ResolvedInvestigation,
+  ResolvedTreatment,
   recordInvestigationResult,
+  recordTreatmentResult,
 } from "../engines/hospital";
 
 import {
@@ -54,15 +58,25 @@ import {
   SerialTestingAdvisory,
 } from "../engines/investigation";
 
+import {
+  evaluateTreatment,
+  TreatmentContext,
+  TreatmentError,
+  TreatmentEvaluation,
+  TreatmentIssue,
+} from "../engines/treatment";
+
 import { InvestigationType } from "../types/enums";
 
+// ══════════════════════════════════════════════
+// INVESTIGATION FLOW
+// ══════════════════════════════════════════════
+
 // ─── Student Facing Report ────────────────────
-// The investigation result safe for student display.
-//
 // Protected fields explicitly absent:
-//   educationalNotes     — post-case only, via Reflection Engine.
-//   falsePositives       — post-case only, via Reflection Engine.
-//   resolvedSeverityTier — Scoring Engine internal only.
+//   resolvedSeverityTier — Scoring Engine only
+//   educationalNotes     — post-case, Reflection Engine
+//   falsePositives       — post-case, Reflection Engine
 
 export interface StudentFacingReport {
   readonly investigationId:        string;
@@ -76,15 +90,9 @@ export interface StudentFacingReport {
 }
 
 // ─── Post Case Investigation Data ─────────────
-// Holds protected educational content for future
-// Reflection Engine consumption.
-//
-// The caller is responsible for:
-//   1. Accumulating one entry per resolved investigation.
-//   2. Holding this data outside the student-facing session.
-//   3. Releasing it only after encounter completion via the
-//      Reflection Engine, which combines it with Disease Engine
-//      ReflectionHooks to produce the post-case breakdown.
+// Released post-case by Reflection Engine only.
+// Must never be shown during an active encounter.
+// Caller accumulates one entry per resolved investigation.
 
 export interface PostCaseInvestigationData {
   readonly investigationId:  string;
@@ -93,15 +101,6 @@ export interface PostCaseInvestigationData {
 }
 
 // ─── Simulation Result ────────────────────────
-// Discriminated union returned by resolveOrderedInvestigation.
-//
-// On success:
-//   session:      updated StudentSession with result in state.
-//   report:       student-safe result for immediate display.
-//   postCaseData: protected content — do NOT show during encounter.
-//
-// On failure:
-//   error: InvestigationError exactly as produced by Investigation Engine.
 
 export type SimulationResult =
   | {
@@ -115,17 +114,8 @@ export type SimulationResult =
       readonly error: InvestigationError;
     };
 
-// ─── Private Mapping Functions ────────────────
-// Pure field projections only. Zero business logic.
+// ─── Private Mapping (Investigation) ──────────
 
-/**
- * Maps InvestigationReport to the minimal ResolvedInvestigation
- * stored by Hospital Engine in HospitalState.
- *
- * timestamp is intentionally absent — wall-clock time is already
- * captured in HospitalState.events via INVESTIGATION_RESULTED.
- * resolvedAt (clinical minutes) is the canonical time reference.
- */
 function mapToResolvedInvestigation(
   report: InvestigationReport
 ): ResolvedInvestigation {
@@ -139,10 +129,6 @@ function mapToResolvedInvestigation(
   };
 }
 
-/**
- * Projects the student-safe subset of InvestigationReport.
- * Protected fields deliberately absent.
- */
 function buildStudentFacingReport(
   report: InvestigationReport
 ): StudentFacingReport {
@@ -158,10 +144,6 @@ function buildStudentFacingReport(
   };
 }
 
-/**
- * Extracts protected educational content for Reflection Engine.
- * Must not be shown to the student during an active encounter.
- */
 function buildPostCaseData(
   report: InvestigationReport
 ): PostCaseInvestigationData {
@@ -182,8 +164,8 @@ function buildPostCaseData(
  * has already been applied via applyAction() before calling this.
  *
  * @param session         Current StudentSession.
- * @param context         InvestigationContext — clinicalMinutes must
- *                        equal session.state.timeState.elapsedClinicalMinutes.
+ * @param context         InvestigationContext — clinicalMinutes must match
+ *                        session.state.timeState.elapsedClinicalMinutes.
  * @param investigationId ID of the investigation to resolve.
  */
 export function resolveOrderedInvestigation(
@@ -192,11 +174,7 @@ export function resolveOrderedInvestigation(
   investigationId: string
 ): SimulationResult {
 
-  const result = resolveInvestigation(
-    investigationId,
-    context,
-    session.state
-  );
+  const result = resolveInvestigation(investigationId, context, session.state);
 
   if (!result.ok) {
     return { ok: false, error: result.error };
@@ -216,5 +194,218 @@ export function resolveOrderedInvestigation(
     session:      newSession,
     report:       buildStudentFacingReport(result.report),
     postCaseData: buildPostCaseData(result.report),
+  };
+}
+
+// ══════════════════════════════════════════════
+// TREATMENT FLOW
+// ══════════════════════════════════════════════
+
+// ─── Treatment Facing Result ──────────────────
+// What the student sees immediately after a treatment
+// is administered and evaluated.
+//
+// correctness is deliberately absent — revealing it
+// immediately violates the Kairos "no instant right/wrong
+// feedback" principle. The student must reason from
+// patient response and investigation results.
+//
+// issues ARE shown because they represent real-time
+// clinical safety signals — a pharmacist or nurse in
+// a real hospital would raise contraindications and
+// duplication warnings immediately. These are not
+// correctness verdicts; they are safety information.
+//
+// educationalNotes are post-case only.
+
+export interface TreatmentFacingResult {
+  readonly medicineId:   string;
+  readonly medicineName: string;
+  readonly evaluatedAt:  number;              // clinical minutes
+  readonly issues:       readonly TreatmentIssue[];
+}
+
+// ─── Post Case Treatment Data ─────────────────
+// Protected data released post-case by Reflection Engine.
+// Must NOT be shown to the student during an active encounter.
+// Caller accumulates one entry per evaluated treatment.
+//
+// correctness is revealed here — the Reflection Engine
+// uses it alongside Disease Engine ReflectionHooks to
+// produce the post-case learning breakdown.
+
+export interface PostCaseTreatmentData {
+  readonly medicineId:       string;
+  readonly medicineName:     string;
+  readonly correctness:      string;           // TreatmentCorrectness as string
+  readonly educationalNotes: readonly string[];
+}
+
+// ─── Treatment Simulation Error ───────────────
+// RECORD_NOT_FOUND: raised at controller boundary when no
+//   TreatmentRecord exists for the given medicineId.
+//   Indicates the caller forgot to apply ADMINISTER_TREATMENT
+//   before calling resolveAdministeredTreatment.
+//
+// TreatmentError variants (MEDICINE_NOT_FOUND,
+//   RECORD_NOT_IN_CONTEXT) propagated unchanged from
+//   Treatment Engine.
+
+export type TreatmentSimulationError =
+  | TreatmentError
+  | {
+      readonly kind:       "RECORD_NOT_FOUND";
+      readonly medicineId: string;
+      readonly message:    string;
+    };
+
+// ─── Treatment Simulation Result ──────────────
+
+export type TreatmentSimulationResult =
+  | {
+      readonly ok:           true;
+      readonly session:      StudentSession;
+      readonly result:       TreatmentFacingResult;
+      readonly postCaseData: PostCaseTreatmentData;
+    }
+  | {
+      readonly ok:    false;
+      readonly error: TreatmentSimulationError;
+    };
+
+// ─── Private Mapping (Treatment) ──────────────
+
+/**
+ * Maps TreatmentEvaluation to the minimal ResolvedTreatment
+ * stored by Hospital Engine in HospitalState.
+ *
+ * educationalNotes deliberately absent — held in PostCaseTreatmentData.
+ * correctness stored as string — Hospital Engine does not import
+ * Treatment Engine types to prevent circular dependency.
+ */
+function mapToResolvedTreatment(
+  evaluation:      TreatmentEvaluation,
+  clinicalMinutes: number
+): ResolvedTreatment {
+  return {
+    medicineId:   evaluation.medicineId,
+    medicineName: evaluation.medicineName,
+    evaluatedAt:  clinicalMinutes,
+    correctness:  evaluation.correctness,
+    hasIssues:    evaluation.issues.length > 0,
+    issueCount:   evaluation.issues.length,
+  };
+}
+
+/**
+ * Projects the student-safe subset of TreatmentEvaluation.
+ * correctness and educationalNotes deliberately absent.
+ */
+function buildTreatmentFacingResult(
+  evaluation:      TreatmentEvaluation,
+  clinicalMinutes: number
+): TreatmentFacingResult {
+  return {
+    medicineId:   evaluation.medicineId,
+    medicineName: evaluation.medicineName,
+    evaluatedAt:  clinicalMinutes,
+    issues:       evaluation.issues,
+  };
+}
+
+/**
+ * Extracts protected content for Reflection Engine consumption.
+ * Must not be shown to the student during an active encounter.
+ */
+function buildPostCaseTreatmentData(
+  evaluation: TreatmentEvaluation
+): PostCaseTreatmentData {
+  return {
+    medicineId:       evaluation.medicineId,
+    medicineName:     evaluation.medicineName,
+    correctness:      evaluation.correctness,
+    educationalNotes: evaluation.educationalNotes,
+  };
+}
+
+// ─── Public API ───────────────────────────────
+
+/**
+ * Evaluates a treatment that has already been administered
+ * (via applyAction ADMINISTER_TREATMENT) and records the
+ * result into HospitalState.
+ *
+ * Mirrors resolveOrderedInvestigation() in structure:
+ *   1. Find the most recently administered record for medicineId.
+ *   2. Call evaluateTreatment() from Treatment Engine.
+ *   3. Map TreatmentEvaluation → ResolvedTreatment.
+ *   4. Call recordTreatmentResult() on Hospital Engine.
+ *   5. Return updated session + student-safe result + post-case data.
+ *
+ * Precondition: ADMINISTER_TREATMENT for this medicineId has
+ * already been applied via applyAction() before calling this.
+ *
+ * @param session    Current StudentSession.
+ * @param context    TreatmentContext. Caller sets allRecords to
+ *                   session.state.administeredTreatments and clinicalMinutes
+ *                   to session.state.timeState.elapsedClinicalMinutes.
+ * @param medicineId The medicine ID to evaluate.
+ */
+export function resolveAdministeredTreatment(
+  session:    StudentSession,
+  context:    TreatmentContext,
+  medicineId: string
+): TreatmentSimulationResult {
+
+  // ── 1. Find the most recent TreatmentRecord ──
+  // Records are appended in order so the last matching
+  // entry is the most recently administered.
+  const matchingRecords = context.allRecords.filter(
+    r => r.medicineId === medicineId
+  );
+  const record = matchingRecords[matchingRecords.length - 1];
+
+  if (record === undefined) {
+    return {
+      ok:    false,
+      error: {
+        kind:       "RECORD_NOT_FOUND",
+        medicineId,
+        message:
+          `No TreatmentRecord found for medicine "${medicineId}". ` +
+          `Apply ADMINISTER_TREATMENT via applyAction() before calling ` +
+          `resolveAdministeredTreatment().`,
+      },
+    };
+  }
+
+  // ── 2. Evaluate via Treatment Engine ─────────
+  const result = evaluateTreatment(record, context);
+
+  if (!result.ok) {
+    return { ok: false, error: result.error };
+  }
+
+  // ── 3. Map to Hospital Engine types ──────────
+  const clinicalMinutes = session.state.timeState.elapsedClinicalMinutes;
+  const resolved        = mapToResolvedTreatment(result.evaluation, clinicalMinutes);
+
+  // ── 4. Record result in HospitalState ─────────
+  const newState = recordTreatmentResult(session.state, resolved);
+
+  // ── 5. Reconstruct session immutably ──────────
+  // sessionId and encounter preserved exactly.
+  // Only state is replaced.
+  const newSession: StudentSession = {
+    sessionId: session.sessionId,
+    encounter: session.encounter,
+    state:     newState,
+  };
+
+  return {
+    ok:           true,
+    session:      newSession,
+    result:       buildTreatmentFacingResult(result.evaluation, clinicalMinutes),
+    postCaseData: buildPostCaseTreatmentData(result.evaluation),
   };
 }
