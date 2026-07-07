@@ -1,26 +1,18 @@
 // ─────────────────────────────────────────────
 // KAIROS — Hospital Engine Event Factories
 //
-// Centralised construction of HospitalEvent objects.
-// Every state transition produces exactly one event.
-//
-// These functions are internal to the Hospital Engine.
-// Not exported from index.ts — callers read events
-// from HospitalState.events, never call these directly.
+// Internal to Hospital Engine.
+// Not exported from index.ts.
 // ─────────────────────────────────────────────
 
 import { HospitalEvent, HospitalEventType } from "./types";
 import { EncounterAction }                  from "../encounter";
-
-// ─── ID Generation ────────────────────────────
 
 function generateEventId(): string {
   const time = Date.now().toString(16);
   const rand = Math.floor(Math.random() * 0xffff).toString(16).padStart(4, "0");
   return `evt-${time}-${rand}`;
 }
-
-// ─── Core Builder ─────────────────────────────
 
 function buildEvent(
   type:            HospitalEventType,
@@ -36,11 +28,7 @@ function buildEvent(
   };
 }
 
-// ─── Factory Functions ────────────────────────
-
-export function buildSessionStartedEvent(
-  clinicalMinutes: number
-): HospitalEvent {
+export function buildSessionStartedEvent(clinicalMinutes: number): HospitalEvent {
   return buildEvent("SESSION_STARTED", clinicalMinutes, {});
 }
 
@@ -58,16 +46,6 @@ export function buildInvestigationOrderedEvent(
   return buildEvent("INVESTIGATION_ORDERED", clinicalMinutes, { investigationId });
 }
 
-/**
- * INVESTIGATION_RESULTED — emitted when a resolved investigation
- * result is recorded into HospitalState.
- *
- * payload.investigationId: string
- * payload.resolvedAt:      number — clinical minutes of resolution
- * payload.severityTier:    string — Scoring Engine reads this to evaluate
- *                          whether the student correctly interpreted results.
- *                          Simulation Controller never surfaces this to the student.
- */
 export function buildInvestigationResultedEvent(
   investigationId: string,
   resolvedAt:      number,
@@ -93,6 +71,34 @@ export function buildTreatmentAdministeredEvent(
   return buildEvent("TREATMENT_ADMINISTERED", clinicalMinutes, payload);
 }
 
+/**
+ * TREATMENT_EVALUATED — emitted when a treatment evaluation
+ * result is recorded into HospitalState.
+ *
+ * payload.medicineId:  string  — which medicine was evaluated
+ * payload.correctness: string  — TreatmentCorrectness value
+ * payload.hasIssues:   boolean — quick signal for Scoring Engine
+ * payload.issueCount:  number  — detail for Scoring Engine
+ *
+ * educationalNotes deliberately absent from payload —
+ * they are held by the Simulation Controller and
+ * released post-case via the Reflection Engine.
+ */
+export function buildTreatmentEvaluatedEvent(
+  medicineId:      string,
+  correctness:     string,
+  hasIssues:       boolean,
+  issueCount:      number,
+  clinicalMinutes: number
+): HospitalEvent {
+  return buildEvent("TREATMENT_EVALUATED", clinicalMinutes, {
+    medicineId,
+    correctness,
+    hasIssues,
+    issueCount,
+  });
+}
+
 export function buildObservationRecordedEvent(
   content:         string,
   clinicalMinutes: number
@@ -100,14 +106,10 @@ export function buildObservationRecordedEvent(
   return buildEvent("OBSERVATION_RECORDED", clinicalMinutes, { content });
 }
 
-export function buildEncounterCompletedEvent(
-  clinicalMinutes: number
-): HospitalEvent {
+export function buildEncounterCompletedEvent(clinicalMinutes: number): HospitalEvent {
   return buildEvent("ENCOUNTER_COMPLETED", clinicalMinutes, {});
 }
 
-export function buildEncounterAbandonedEvent(
-  clinicalMinutes: number
-): HospitalEvent {
+export function buildEncounterAbandonedEvent(clinicalMinutes: number): HospitalEvent {
   return buildEvent("ENCOUNTER_ABANDONED", clinicalMinutes, {});
 }

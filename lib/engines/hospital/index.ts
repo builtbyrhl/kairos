@@ -1,12 +1,13 @@
 // ─────────────────────────────────────────────
 // KAIROS — Hospital Engine Public API
-//
-// Callers import only from this file.
-// Internal files (events.ts, action handlers)
-// are never imported directly by consumers.
 // ─────────────────────────────────────────────
 
-export { createSession, applyAction, recordInvestigationResult } from "./state";
+export {
+  createSession,
+  applyAction,
+  recordInvestigationResult,
+  recordTreatmentResult,
+} from "./state";
 
 export {
   canPerformAction,
@@ -17,7 +18,7 @@ export {
   canAbandonEncounter,
 } from "./guards";
 
-export type { GuardResult }           from "./guards";
+export type { GuardResult } from "./guards";
 
 export type {
   EncounterStatus,
@@ -26,6 +27,7 @@ export type {
   InvestigationOrder,
   ResolvedInvestigation,
   TreatmentRecord,
+  ResolvedTreatment,
   ObservationRecord,
   HospitalEventType,
   HospitalEvent,

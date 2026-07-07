@@ -5,21 +5,14 @@
 //
 // Hospital Engine records what the student did.
 // It does not evaluate correctness — that belongs
-// to future Treatment Engine and Scoring Engine.
+// to Treatment Engine and Scoring Engine.
 //
-// Encounter Engine types are consumed read-only.
-// No Hospital Engine type ever re-wraps an
-// Encounter Engine type. The original Encounter
-// is stored whole in StudentSession.encounter.
-//
-// All interfaces are immutable by design.
-// applyAction always returns a new HospitalState.
-//
-// ResolvedInvestigation uses only primitive types
-// and lib/types/enums. It never imports from the
-// Investigation Engine — that would create a
-// circular dependency. The Simulation Controller
-// maps InvestigationReport → ResolvedInvestigation.
+// ResolvedInvestigation and ResolvedTreatment use
+// only primitive types and lib/types/enums.
+// They never import from Investigation Engine or
+// Treatment Engine — that would create circular deps.
+// The Simulation Controller maps engine output to
+// these types.
 // ─────────────────────────────────────────────
 
 import { Encounter, EncounterAction, TriagePriority } from "../encounter";
@@ -60,32 +53,14 @@ export interface InvestigationOrder {
 }
 
 // ─── Resolved Investigation ───────────────────
-// Minimal record stored in HospitalState after
-// a successful resolveInvestigation() call.
-//
-// Wall-clock timestamp is intentionally absent.
-// It is captured in HospitalState.events via the
-// INVESTIGATION_RESULTED event. Storing it here
-// would create two timestamps for the same event
-// that may differ by milliseconds — an inconsistent
-// audit trail.
-//
-// resolvedAt (clinical minutes) is the canonical
-// time reference in Kairos.
-//
-// severityTier is stored for the Scoring Engine
-// to evaluate result interpretation quality.
-// The Simulation Controller strips this from
-// any student-facing display.
-//
-// Multiple entries may exist for the same
-// investigationId — serial testing produces one
-// ResolvedInvestigation per resolution.
+// Wall-clock timestamp intentionally absent.
+// Captured in HospitalState.events via INVESTIGATION_RESULTED.
+// resolvedAt (clinical minutes) is the canonical time reference.
 
 export interface ResolvedInvestigation {
   readonly investigationId: string;
   readonly name:            string;
-  readonly resolvedAt:      number;        // clinical minutes
+  readonly resolvedAt:      number;
   readonly hasRedFlags:     boolean;
   readonly findingCount:    number;
   readonly severityTier:    Severity | "normal";
@@ -99,6 +74,28 @@ export interface TreatmentRecord {
   readonly timestamp:  string;
   readonly dose?:      string;
   readonly route?:     string;
+}
+
+// ─── Resolved Treatment ───────────────────────
+// Minimal record stored in HospitalState after a
+// successful evaluateTreatment() call.
+//
+// correctness stored as string — Treatment Engine's
+// TreatmentCorrectness type is not imported here to
+// prevent circular dependency. The Simulation Controller
+// maps TreatmentEvaluation → ResolvedTreatment.
+//
+// educationalNotes deliberately absent — they are held
+// by the Simulation Controller and released post-case
+// via the Reflection Engine.
+
+export interface ResolvedTreatment {
+  readonly medicineId:   string;
+  readonly medicineName: string;
+  readonly evaluatedAt:  number;    // clinical minutes
+  readonly correctness:  string;    // TreatmentCorrectness as string
+  readonly hasIssues:    boolean;
+  readonly issueCount:   number;
 }
 
 // ─── Observation Record ───────────────────────
@@ -117,6 +114,7 @@ export type HospitalEventType =
   | "INVESTIGATION_ORDERED"
   | "INVESTIGATION_RESULTED"
   | "TREATMENT_ADMINISTERED"
+  | "TREATMENT_EVALUATED"
   | "OBSERVATION_RECORDED"
   | "ENCOUNTER_COMPLETED"
   | "ENCOUNTER_ABANDONED";
@@ -132,6 +130,11 @@ export interface HospitalEvent {
 }
 
 // ─── Hospital Action ──────────────────────────
+// recordTreatmentResult is NOT a HospitalAction.
+// It is engine-to-engine communication — not a
+// student action. Routing it through applyAction
+// would require a new variant and break exhaustive
+// switches across the codebase.
 
 export type HospitalAction =
   | { readonly type: "COMPLETE_ACTION";      readonly action: EncounterAction                                             }
@@ -154,6 +157,7 @@ export interface HospitalState {
   readonly orderedInvestigations:  readonly InvestigationOrder[];
   readonly resolvedInvestigations: readonly ResolvedInvestigation[];
   readonly administeredTreatments: readonly TreatmentRecord[];
+  readonly resolvedTreatments:     readonly ResolvedTreatment[];
   readonly observations:           readonly ObservationRecord[];
   readonly events:                 readonly HospitalEvent[];
   readonly availableActions:       readonly EncounterAction[];
