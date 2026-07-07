@@ -26,13 +26,6 @@ import { Encounter, EncounterAction, TriagePriority } from "../encounter";
 import { Severity }                                   from "../../types/enums";
 
 // ─── Encounter Lifecycle ──────────────────────
-// Valid transitions (one-directional):
-//
-//   not_started → active
-//   active      → paused | completed | abandoned
-//   paused      → active
-//
-// completed and abandoned are terminal.
 
 export type EncounterStatus =
   | "not_started"
@@ -42,11 +35,6 @@ export type EncounterStatus =
   | "abandoned";
 
 // ─── Time State ───────────────────────────────
-// elapsedRealSeconds is intentionally absent.
-// Wall clock elapsed is computed by the UI from
-// wallClockStartedAt. Clinical time is stored as
-// a running total because it only advances when
-// the engine decides — not continuously.
 
 export interface TimeState {
   readonly wallClockStartedAt:     string;
@@ -62,11 +50,6 @@ export interface CompletedAction {
 }
 
 // ─── Investigation Order ──────────────────────
-// Hospital Engine records that an investigation
-// was ordered. It does NOT evaluate the result.
-// Future Investigation Engine resolves results.
-// Status transitions: pending → resulted via
-// recordInvestigationResult().
 
 export interface InvestigationOrder {
   readonly investigationId:   string;
@@ -77,19 +60,23 @@ export interface InvestigationOrder {
 }
 
 // ─── Resolved Investigation ───────────────────
-// A minimal record that an investigation has been
-// resolved and stored in session state.
+// Minimal record stored in HospitalState after
+// a successful resolveInvestigation() call.
 //
-// Uses only primitives and lib/types/enums —
-// never imports from Investigation Engine.
+// Wall-clock timestamp is intentionally absent.
+// It is captured in HospitalState.events via the
+// INVESTIGATION_RESULTED event. Storing it here
+// would create two timestamps for the same event
+// that may differ by milliseconds — an inconsistent
+// audit trail.
 //
-// The Simulation Controller maps:
-//   InvestigationReport → ResolvedInvestigation
+// resolvedAt (clinical minutes) is the canonical
+// time reference in Kairos.
 //
 // severityTier is stored for the Scoring Engine
 // to evaluate result interpretation quality.
-// The Simulation Controller strips it from any
-// student-facing display.
+// The Simulation Controller strips this from
+// any student-facing display.
 //
 // Multiple entries may exist for the same
 // investigationId — serial testing produces one
@@ -98,8 +85,7 @@ export interface InvestigationOrder {
 export interface ResolvedInvestigation {
   readonly investigationId: string;
   readonly name:            string;
-  readonly resolvedAt:      number;       // clinical minutes when resolved
-  readonly timestamp:       string;       // ISO 8601
+  readonly resolvedAt:      number;        // clinical minutes
   readonly hasRedFlags:     boolean;
   readonly findingCount:    number;
   readonly severityTier:    Severity | "normal";
@@ -124,8 +110,6 @@ export interface ObservationRecord {
 }
 
 // ─── Hospital Event Type ──────────────────────
-// Every state transition produces exactly one event.
-// Future Scoring Engine reads the event log.
 
 export type HospitalEventType =
   | "SESSION_STARTED"
@@ -148,29 +132,16 @@ export interface HospitalEvent {
 }
 
 // ─── Hospital Action ──────────────────────────
-// Discriminated union of all student commands.
-// Adding a new variant causes a compile error in
-// applyAction until its handler is implemented.
-//
-// recordInvestigationResult is NOT a HospitalAction.
-// It is engine-to-engine communication triggered
-// by the Simulation Controller — not a student action.
 
 export type HospitalAction =
-  | { readonly type: "COMPLETE_ACTION";      readonly action: EncounterAction                                              }
-  | { readonly type: "ORDER_INVESTIGATION";  readonly investigationId: string                                              }
-  | { readonly type: "ADMINISTER_TREATMENT"; readonly medicineId: string; readonly dose?: string; readonly route?: string  }
-  | { readonly type: "RECORD_OBSERVATION";   readonly content: string                                                      }
-  | { readonly type: "COMPLETE_ENCOUNTER"                                                                                  }
-  | { readonly type: "ABANDON_ENCOUNTER"                                                                                   };
+  | { readonly type: "COMPLETE_ACTION";      readonly action: EncounterAction                                             }
+  | { readonly type: "ORDER_INVESTIGATION";  readonly investigationId: string                                             }
+  | { readonly type: "ADMINISTER_TREATMENT"; readonly medicineId: string; readonly dose?: string; readonly route?: string }
+  | { readonly type: "RECORD_OBSERVATION";   readonly content: string                                                     }
+  | { readonly type: "COMPLETE_ENCOUNTER"                                                                                 }
+  | { readonly type: "ABANDON_ENCOUNTER"                                                                                  };
 
 // ─── Hospital State ───────────────────────────
-// Complete, immutable record of everything that
-// has happened in this encounter session.
-//
-// resolvedInvestigations: grows as investigation
-// results are recorded via recordInvestigationResult.
-// Starts empty. Never mutated in place.
 
 export interface HospitalState {
   readonly sessionId:              string;
