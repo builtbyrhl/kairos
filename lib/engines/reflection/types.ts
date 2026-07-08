@@ -1,67 +1,85 @@
 // ─────────────────────────────────────────────
 // KAIROS — Reflection Engine Types
-// Teaches after simulation. Never interrupts it.
+//
+// Ownership: Reflection Engine exclusively.
+//
+// The Reflection Engine takes post-case data and
+// produces a structured learning breakdown.
+//
+// It consumes:
+//   PerformanceScore       — from Scoring Engine
+//   PostCaseInvestigation  — educational notes per investigation
+//   PostCaseTreatment      — correctness + notes per treatment
+//   Disease                — investigation names for display
+//
+// It never imports from:
+//   Simulation Controller  — to avoid controller ↔ engine coupling.
+//     Instead, PostCaseInvestigation and PostCaseTreatment mirror
+//     the simulation controller's PostCase types structurally.
+//     TypeScript's structural typing ensures compatibility.
+//   Hospital Engine        — not needed; PerformanceScore comes
+//     from Scoring Engine which already consumed HospitalState.
+//   Encounter Engine       — student-facing layer, above this.
+//
+// All output is post-case only.
+// Never surface ReflectionResult to the student during
+// an active encounter.
 // ─────────────────────────────────────────────
 
-import { ClinicalImportance, ScoreCategory, OutcomeType } from "../../types/enums";
+import type { PerformanceScore, HookResult, CategoryScore } from "../scoring";
+import type { Disease } from "../disease/types";
 
-// ─── Decision Record ──────────────────────────
-// Every student action recorded during simulation.
+// ─── Input types ──────────────────────────────
+// These structurally match PostCaseInvestigationData
+// and PostCaseTreatmentData from the Simulation Controller.
+// Defined here to prevent reflection engine from depending
+// on the orchestration layer.
 
-export interface DecisionRecord {
-  action:           string;
-  timestamp:        number;        // clinical minutes
-  category:         ScoreCategory;
-  correct:          boolean;
-  criticalError:    boolean;
-  triggeredHookId?: string;
+export interface PostCaseInvestigation {
+  readonly investigationId:  string;
+  readonly educationalNotes: string;
+  readonly falsePositives:   readonly string[];
 }
 
-// ─── Immediate Reflection ─────────────────────
-// Shown immediately after case ends.
-// Quick, scannable, emotional.
-
-export interface ImmediateReflection {
-  caseId:          string;
-  patientName:     string;
-  outcome:         OutcomeType;
-  score:           number;          // 0–100
-  decisions:       DecisionRecord[];
-  keyMistakes:     ReflectionEntry[];
-  keySuccesses:    ReflectionEntry[];
-  summary:         string;
+export interface PostCaseTreatment {
+  readonly medicineId:       string;
+  readonly medicineName:     string;
+  readonly correctness:      string;   // TreatmentCorrectness as string
+  readonly educationalNotes: readonly string[];
 }
 
-// ─── Deep Reflection ──────────────────────────
-// Available after Immediate Reflection.
-// Detailed, educational, guideline-linked.
+// ─── Reflection Context ───────────────────────
 
-export interface DeepReflection {
-  caseId:              string;
-  idealDecisionPath:   IdealDecisionStep[];
-  missedOpportunities: ReflectionEntry[];
-  guidelineHighlights: GuidelineHighlight[];
-  clinicalPearls:      string[];
+export interface ReflectionContext {
+  readonly score:                  PerformanceScore;
+  readonly postCaseInvestigations: readonly PostCaseInvestigation[];
+  readonly postCaseTreatments:     readonly PostCaseTreatment[];
+  readonly disease:                Disease;
 }
 
-// ─── Supporting Types ─────────────────────────
+// ─── Output types ─────────────────────────────
 
-export interface ReflectionEntry {
-  hookId:     string;
-  message:    string;
-  importance: ClinicalImportance;
-  category:   ScoreCategory;
+export interface InvestigationReflection {
+  readonly investigationId:  string;
+  readonly name:             string;
+  readonly educationalNotes: string;
+  readonly falsePositives:   readonly string[];
 }
 
-export interface IdealDecisionStep {
-  order:    number;
-  action:   string;
-  reason:   string;
-  timing:   string;          // clinical time context
+export interface TreatmentReflection {
+  readonly medicineId:       string;
+  readonly medicineName:     string;
+  readonly correctness:      string;
+  readonly isPositive:       boolean;   // correct or acceptable
+  readonly educationalNotes: readonly string[];
 }
 
-export interface GuidelineHighlight {
-  source:     string;
-  point:      string;
-  relevance:  string;
+export interface ReflectionResult {
+  readonly score:           PerformanceScore;
+  readonly hookResults:     readonly HookResult[];
+  readonly byCategory:      readonly CategoryScore[];
+  readonly investigations:  readonly InvestigationReflection[];
+  readonly treatments:      readonly TreatmentReflection[];
+  readonly summary:         string;
+  readonly grade:           string;
 }
