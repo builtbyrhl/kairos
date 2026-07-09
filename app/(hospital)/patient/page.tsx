@@ -1,38 +1,56 @@
+// ─────────────────────────────────────────────
+// KAIROS — Patient Page
+//
+// The heart of the simulation.
+//
+// Progressive disclosure rules:
+//   Vitals          → always visible (nursing triage data)
+//   Medical history → Unknown until Take History completed
+//   Examination     → Unknown until Physical Examination completed
+//   Investigations  → Always orderable; results earned through action
+//   Treatments      → Always prescribable; consequences follow
+//
+// Architecture:
+//   All clinical logic lives in engines.
+//   This component presents engine state and
+//   triggers engine actions. Zero medical logic here.
+// ─────────────────────────────────────────────
+
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter }                        from 'next/navigation';
-
-import { useSession }             from '../../../lib/context/SessionContext';
-import { applyAction }            from '../../../lib/engines/hospital';
+import { useSession }                       from '../../../lib/context/SessionContext';
+import { applyAction }                      from '../../../lib/engines/hospital';
 import type { VisibleVital, TriagePriority, EncounterAction }
-                                  from '../../../lib/engines/encounter';
-import type { StudentSession }    from '../../../lib/engines/hospital';
-import type { InvestigationContext }
-                                  from '../../../lib/engines/investigation';
-import type { TreatmentContext }  from '../../../lib/engines/treatment';
+                                            from '../../../lib/engines/encounter';
+import type { StudentSession }              from '../../../lib/engines/hospital';
+import type { InvestigationContext }        from '../../../lib/engines/investigation';
+import type { TreatmentContext }            from '../../../lib/engines/treatment';
 import {
   resolveOrderedInvestigation,
   resolveAdministeredTreatment,
-}                                 from '../../../lib/controllers/simulation';
+}                                           from '../../../lib/controllers/simulation';
 import type { StudentFacingReport, TreatmentFacingResult }
-                                  from '../../../lib/controllers/simulation';
-import { MedicineRegistry }       from '../../../lib/data/medicines/registry';
+                                            from '../../../lib/controllers/simulation';
+import { MedicineRegistry }                from '../../../lib/data/medicines/registry';
 import {
   InvestigationPriority,
   TreatmentPriority,
   TreatmentTiming,
-}                                 from '../../../lib/types/enums';
+}                                           from '../../../lib/types/enums';
+import HistoryConversation                  from '../../../components/kairos/HistoryConversation';
+import ExaminationFlow                      from '../../../components/kairos/ExaminationFlow';
 
-// ─── Triage display config ────────────────────
+// ─── Constants ────────────────────────────────
 
-type TriageInfo = { label: string; bg: string; text: string };
+type TriageInfo = { label: string; dot: string; };
 
 const TRIAGE_CONFIG: Record<TriagePriority, TriageInfo> = {
-  red:    { label: 'IMMEDIATE',   bg: 'bg-red-500',    text: 'text-white'      },
-  orange: { label: 'URGENT',      bg: 'bg-orange-400', text: 'text-white'      },
-  yellow: { label: 'LESS URGENT', bg: 'bg-yellow-400', text: 'text-yellow-900' },
-  green:  { label: 'NON-URGENT',  bg: 'bg-green-500',  text: 'text-white'      },
+  red:    { label: 'IMMEDIATE',   dot: 'bg-red-500'    },
+  orange: { label: 'URGENT',      dot: 'bg-orange-400' },
+  yellow: { label: 'LESS URGENT', dot: 'bg-yellow-400' },
+  green:  { label: 'NON-URGENT',  dot: 'bg-green-500'  },
 };
 
 const ACTION_COSTS: Record<EncounterAction, number> = {
@@ -44,117 +62,58 @@ const ACTION_COSTS: Record<EncounterAction, number> = {
   'Observe':              15,
 };
 
-type Tab = 'overview' | 'history' | 'investigations' | 'treatments' | 'events';
+type Tab = 'overview' | 'history' | 'investigations' | 'treatment' | 'timeline';
 
 // ─── Sub-components ───────────────────────────
 
-function Badge({ label, color }: { label: string; color: TriagePriority }) {
-  const cfg = TRIAGE_CONFIG[color];
+function VitalsRow({ vital }: { vital: VisibleVital }) {
   return (
-    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold tracking-widest ${cfg.bg} ${cfg.text}`}>
-      {label}
-    </span>
-  );
-}
-
-function SectionCard({ title, children }: { title?: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm">
-      {title && (
-        <h3 className="text-xs font-semibold text-gray-400 tracking-widest uppercase mb-4">
-          {title}
-        </h3>
-      )}
-      {children}
+    <div className="flex items-center justify-between py-3 border-b border-gray-50 last:border-0">
+      <span className="text-sm text-slate-600">{vital.parameter}</span>
+      <div className="flex items-center gap-2.5">
+        <span className={`font-mono text-sm font-semibold ${
+          vital.isRedFlag ? 'text-red-600' : vital.isAbnormal ? 'text-amber-600' : 'text-slate-900'
+        }`}>
+          {vital.value}
+        </span>
+        <span className="text-xs text-slate-400 w-12 text-right">{vital.unit}</span>
+        {vital.isRedFlag && (
+          <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" title="Red flag" />
+        )}
+        {vital.isAbnormal && !vital.isRedFlag && (
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" title="Abnormal" />
+        )}
+      </div>
     </div>
   );
 }
 
-function TabButton({ active, label, onClick }: {
-  active: boolean; label: string; onClick: () => void;
-}) {
+function UnknownField({ label }: { label: string }) {
   return (
-    <button
-      onClick={onClick}
-      className={`
-        pb-3 text-sm font-medium transition-colors duration-150 border-b-2 whitespace-nowrap
-        ${active
-          ? 'border-blue-950 text-blue-950'
-          : 'border-transparent text-gray-400 hover:text-gray-600'}
-      `}
-    >
-      {label}
-    </button>
+    <div className="flex justify-between items-center py-2.5 border-b border-gray-50 last:border-0">
+      <span className="text-sm text-slate-600">{label}</span>
+      <span className="text-xs text-slate-300 italic">Not assessed</span>
+    </div>
   );
 }
 
-function Btn({ label, onClick, disabled = false, variant = 'primary' }: {
-  label: string; onClick: () => void;
-  disabled?: boolean; variant?: 'primary' | 'secondary';
-}) {
-  const styles = {
-    primary:   'bg-blue-950 text-white hover:bg-blue-900 shadow-sm shadow-blue-950/20',
-    secondary: 'bg-gray-100 text-gray-700 hover:bg-gray-200',
-  };
+function InvestigationResultPanel({ report }: { report: StudentFacingReport }) {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`inline-flex items-center px-4 py-2 rounded-xl text-sm font-medium
-        transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed
-        ${styles[variant]}`}
-    >
-      {label}
-    </button>
-  );
-}
-
-function VitalsTable({ vitals }: { vitals: readonly VisibleVital[] }) {
-  return (
-    <table className="w-full text-sm">
-      <thead>
-        <tr className="border-b border-gray-100">
-          <th className="text-left py-2 pr-6 text-xs font-semibold text-gray-400 uppercase tracking-wider">Parameter</th>
-          <th className="text-right py-2 pr-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Value</th>
-          <th className="text-left py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Unit</th>
-        </tr>
-      </thead>
-      <tbody>
-        {vitals.map((v, i) => (
-          <tr key={i} className="border-b border-gray-50 last:border-0">
-            <td className="py-3 pr-6 text-gray-700 font-medium">{v.parameter}</td>
-            <td className={`py-3 pr-4 text-right font-mono font-semibold ${
-              v.isRedFlag ? 'text-red-600' : v.isAbnormal ? 'text-amber-600' : 'text-gray-900'
-            }`}>
-              {v.value}{v.isRedFlag && <span className="ml-1 text-xs">🚩</span>}
-            </td>
-            <td className="py-3 text-gray-400">{v.unit}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function InvestigationResultCard({ report }: { report: StudentFacingReport }) {
-  return (
-    <div className="mt-3 bg-gray-50 rounded-xl p-4 space-y-3">
+    <div className="mt-4 bg-slate-50 rounded-2xl p-4 space-y-3 border border-slate-100">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Result</span>
-        <span className="text-xs text-gray-400">{report.resolvedAt} min</span>
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Result</p>
+        <p className="text-xs text-slate-400 font-mono">{report.resolvedAt} min</p>
       </div>
 
       {report.findings.length > 0 && (
-        <div className="space-y-1">
+        <div className="space-y-2">
           {report.findings.map((f, i) => (
-            <div key={i} className="flex justify-between text-sm">
-              <span className="text-gray-600">{f.parameter}</span>
-              <span className={`font-mono font-medium ${
-                f.kind === 'quantitative' && f.isAbnormal ? 'text-red-600' : 'text-gray-900'
+            <div key={i} className="flex justify-between items-center">
+              <span className="text-sm text-slate-500">{f.parameter}</span>
+              <span className={`font-mono text-sm font-semibold ${
+                f.kind === 'quantitative' && f.isAbnormal ? 'text-red-600' : 'text-slate-900'
               }`}>
-                {f.kind === 'quantitative'
-                  ? `${f.value} ${f.unit}`
-                  : f.interpretation}
+                {f.kind === 'quantitative' ? `${f.value} ${f.unit}` : f.interpretation}
               </span>
             </div>
           ))}
@@ -162,29 +121,32 @@ function InvestigationResultCard({ report }: { report: StudentFacingReport }) {
       )}
 
       {report.ecgFindings.length > 0 && (
-        <div className="space-y-2 pt-2 border-t border-gray-200">
+        <div className="pt-3 border-t border-slate-100 space-y-2">
           {report.ecgFindings.map((f, i) => (
             <div key={i} className="text-sm">
-              <span className="text-gray-400 text-xs">[{f.leads.join(', ')}] </span>
-              <span className="text-gray-800">{f.finding}</span>
+              <span className="text-slate-400 font-mono text-xs">[{f.leads.join(', ')}] </span>
+              <span className="text-slate-800">{f.finding}</span>
             </div>
           ))}
         </div>
       )}
 
       {report.redFlagFindings.length > 0 && (
-        <div className="pt-2 border-t border-red-100 space-y-0.5">
+        <div className="pt-2 border-t border-red-100 space-y-1">
           {report.redFlagFindings.map((r, i) => (
-            <p key={i} className="text-xs text-red-600">⚠ {r}</p>
+            <p key={i} className="text-xs text-red-700 flex items-start gap-1.5">
+              <span className="flex-shrink-0 mt-0.5">⚠</span>
+              <span>{r}</span>
+            </p>
           ))}
         </div>
       )}
 
       {report.serialTestingAdvisory?.required && (
-        <div className="pt-2 border-t border-blue-100">
-          <p className="text-xs font-semibold text-blue-800 mb-1">Serial testing required:</p>
+        <div className="pt-2 border-t border-blue-100 space-y-0.5">
+          <p className="text-xs font-semibold text-blue-700">Serial testing required:</p>
           {report.serialTestingAdvisory.reasons.map((r, i) => (
-            <p key={i} className="text-xs text-blue-600">{r}</p>
+            <p key={i} className="text-xs text-blue-600">· {r}</p>
           ))}
         </div>
       )}
@@ -192,21 +154,22 @@ function InvestigationResultCard({ report }: { report: StudentFacingReport }) {
   );
 }
 
-function TreatmentResultCard({ result }: { result: TreatmentFacingResult }) {
+function TreatmentResultPanel({ result }: { result: TreatmentFacingResult }) {
   if (result.issues.length === 0) {
     return (
-      <p className="mt-2 text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2">
+      <div className="mt-3 flex items-center gap-2 bg-emerald-50 rounded-xl px-4 py-2.5 text-xs text-emerald-800">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
         Administered at {result.evaluatedAt} min — no clinical concerns.
-      </p>
+      </div>
     );
   }
   return (
-    <div className="mt-2 bg-amber-50 rounded-xl p-3 space-y-1">
+    <div className="mt-3 bg-amber-50 rounded-xl p-3 space-y-1.5">
       {result.issues.map((issue, i) => (
-        <p key={i} className="text-xs text-amber-800">
-          <span className="font-semibold uppercase">[{issue.kind}]</span>{' '}
-          {issue.message}
-        </p>
+        <div key={i} className="text-xs text-amber-900">
+          <span className="font-semibold text-amber-700 uppercase">[{issue.kind}]</span>
+          {' '}{issue.message}
+        </div>
       ))}
     </div>
   );
@@ -217,10 +180,13 @@ function TreatmentResultCard({ result }: { result: TreatmentFacingResult }) {
 export default function PatientPage() {
   const router              = useRouter();
   const { state, dispatch } = useSession();
-  const [activeTab, setActiveTab]           = useState<Tab>('overview');
-  const [doseInput, setDoseInput]           = useState<Record<string, string>>({});
-  const [routeInput, setRouteInput]         = useState<Record<string, string>>({});
-  const [toast, setToast]                   = useState<string | null>(null);
+
+  const [activeTab, setActiveTab]     = useState<Tab>('overview');
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [examOpen, setExamOpen]       = useState(false);
+  const [doseInput, setDoseInput]     = useState<Record<string, string>>({});
+  const [routeInput, setRouteInput]   = useState<Record<string, string>>({});
+  const [toast, setToast]             = useState<string | null>(null);
 
   useEffect(() => {
     if (!state.initialized || !state.session) {
@@ -230,30 +196,32 @@ export default function PatientPage() {
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 3500);
+    setTimeout(() => setToast(null), 3000);
   }, []);
 
-  // Guard: redirect if uninitialized
   if (!state.session || !state.disease || !state.patientCase) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <span className="text-gray-400 text-sm">Loading…</span>
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <span className="text-slate-400 text-sm">Loading…</span>
       </div>
     );
   }
 
-  // TypeScript narrows these to non-null after the early return above
   const session     = state.session;
   const disease     = state.disease;
   const patientCase = state.patientCase;
-  const { encounter }  = session;
-  const hospitalState  = session.state;
-  const isCompleted    = hospitalState.status === 'completed';
-  const clinicalTime   = hospitalState.timeState.elapsedClinicalMinutes;
-  const triage         = TRIAGE_CONFIG[encounter.triagePriority];
+  const { encounter } = session;
+  const hs = session.state;
 
-  // ─── Derived lookup maps ──────────────────────
+  const isCompleted    = hs.status === 'completed';
+  const clinicalTime   = hs.timeState.elapsedClinicalMinutes;
+  const triageInfo     = TRIAGE_CONFIG[encounter.triagePriority];
 
+  // Progressive disclosure flags
+  const hasTakenHistory = hs.completedActions.some(a => a.action === 'Take History');
+  const hasExamined     = hs.completedActions.some(a => a.action === 'Physical Examination');
+
+  // Lookup maps
   const reportsByInvId = new Map<string, StudentFacingReport>(
     state.investigationReports.map(r => [r.investigationId, r])
   );
@@ -261,422 +229,731 @@ export default function PatientPage() {
     state.treatmentResults.map(r => [r.medicineId, r])
   );
 
-  // ─── Action handlers ──────────────────────────
+  // ─── Handlers ─────────────────────────────────
 
-  function doCompleteAction(action: EncounterAction) {
-    const newState = applyAction(hospitalState, { type: 'COMPLETE_ACTION', action });
-    const newSession: StudentSession = { ...session, state: newState };
-    dispatch({ type: 'UPDATE_SESSION', session: newSession });
-    showToast(`✓ ${action} (+${ACTION_COSTS[action]} min)`);
+  function advanceTime(action: EncounterAction) {
+    const newState = applyAction(hs, { type: 'COMPLETE_ACTION', action });
+    dispatch({ type: 'UPDATE_SESSION', session: { ...session, state: newState } });
+    showToast(`${action} · +${ACTION_COSTS[action]} min`);
+  }
+
+  function completeHistory() {
+    const newState = applyAction(hs, { type: 'COMPLETE_ACTION', action: 'Take History' });
+    dispatch({ type: 'UPDATE_SESSION', session: { ...session, state: newState } });
+    setHistoryOpen(false);
+    showToast('History taken · +10 min');
+  }
+
+  function completeExamination() {
+    const newState = applyAction(hs, { type: 'COMPLETE_ACTION', action: 'Physical Examination' });
+    dispatch({ type: 'UPDATE_SESSION', session: { ...session, state: newState } });
+    setExamOpen(false);
+    showToast('Examination complete · +8 min');
   }
 
   function doOrderInvestigation(investigationId: string) {
-    const stateAfterOrder = applyAction(hospitalState, {
-      type: 'ORDER_INVESTIGATION',
-      investigationId,
-    });
-    const sessionAfterOrder: StudentSession = { ...session, state: stateAfterOrder };
-
+    const s1 = applyAction(hs, { type: 'ORDER_INVESTIGATION', investigationId });
+    const sess1: StudentSession = { ...session, state: s1 };
     const context: InvestigationContext = {
       patientCase,
-      clinicalMinutes: stateAfterOrder.timeState.elapsedClinicalMinutes,
+      clinicalMinutes: s1.timeState.elapsedClinicalMinutes,
       disease,
     };
-
-    const result = resolveOrderedInvestigation(sessionAfterOrder, context, investigationId);
-
+    const result = resolveOrderedInvestigation(sess1, context, investigationId);
     if (!result.ok) {
-      dispatch({ type: 'UPDATE_SESSION', session: sessionAfterOrder });
-      showToast(`✗ ${result.error.kind}`);
+      dispatch({ type: 'UPDATE_SESSION', session: sess1 });
+      showToast(`Could not resolve: ${result.error.kind}`);
       return;
     }
-
     dispatch({
-      type:        'INVESTIGATION_RESOLVED',
-      session:     result.session,
-      report:      result.report,
+      type: 'INVESTIGATION_RESOLVED',
+      session: result.session,
+      report: result.report,
       postCaseData: result.postCaseData,
     });
-    showToast(`✓ ${investigationId} resulted`);
+    showToast(`${investigationId} resulted`);
   }
 
   function doAdministerTreatment(medicineId: string) {
     const dose  = doseInput[medicineId]?.trim()  ?? '';
     const route = routeInput[medicineId]?.trim() ?? '';
-
-    const stateAfterAdmin = applyAction(hospitalState, {
+    const s1 = applyAction(hs, {
       type: 'ADMINISTER_TREATMENT',
       medicineId,
       ...(dose  ? { dose  } : {}),
       ...(route ? { route } : {}),
     });
-    const sessionAfterAdmin: StudentSession = { ...session, state: stateAfterAdmin };
-
+    const sess1: StudentSession = { ...session, state: s1 };
     const context: TreatmentContext = {
-      patientCase,
-      disease,
-      clinicalMinutes: stateAfterAdmin.timeState.elapsedClinicalMinutes,
-      allRecords:      stateAfterAdmin.administeredTreatments,
+      patientCase, disease,
+      clinicalMinutes: s1.timeState.elapsedClinicalMinutes,
+      allRecords: s1.administeredTreatments,
     };
-
-    const result = resolveAdministeredTreatment(sessionAfterAdmin, context, medicineId);
-
+    const result = resolveAdministeredTreatment(sess1, context, medicineId);
     if (!result.ok) {
-      dispatch({ type: 'UPDATE_SESSION', session: sessionAfterAdmin });
-      showToast(`✗ ${result.error.kind}`);
+      dispatch({ type: 'UPDATE_SESSION', session: sess1 });
+      showToast(`Error: ${result.error.kind}`);
       return;
     }
-
     dispatch({
-      type:            'TREATMENT_RESOLVED',
-      session:         result.session,
+      type: 'TREATMENT_RESOLVED',
+      session: result.session,
       treatmentResult: result.result,
-      postCaseData:    result.postCaseData,
+      postCaseData: result.postCaseData,
     });
-    showToast(`✓ ${medicineId} administered`);
+    showToast(`${medicineId} administered`);
   }
 
   function doCompleteEncounter() {
-    const newState = applyAction(hospitalState, { type: 'COMPLETE_ENCOUNTER' });
+    const newState = applyAction(hs, { type: 'COMPLETE_ENCOUNTER' });
     dispatch({ type: 'UPDATE_SESSION', session: { ...session, state: newState } });
-    showToast('Encounter completed');
   }
-
-  // ─── Comorbidity rows (explicitly typed) ──────
-
-  const comorbidityRows: Array<{ label: string; value: boolean }> = [
-    { label: 'Smoker',       value: encounter.patientSummary.isSmoker        },
-    { label: 'Diabetes',     value: encounter.patientSummary.hasDiabetes      },
-    { label: 'Hypertension', value: encounter.patientSummary.hasHypertension  },
-    { label: 'Previous MI',  value: encounter.patientSummary.hasPreviousMI    },
-  ];
-
-  const sessionRows: Array<{ label: string; value: number }> = [
-    { label: 'Actions',        value: hospitalState.completedActions.length       },
-    { label: 'Investigations', value: hospitalState.orderedInvestigations.length  },
-    { label: 'Treatments',     value: hospitalState.administeredTreatments.length },
-    { label: 'Observations',   value: hospitalState.observations.length           },
-    { label: 'Events logged',  value: hospitalState.events.length                 },
-  ];
 
   // ─── Render ───────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-slate-50">
+
+      {/* Dialogs */}
+      {historyOpen && (
+        <HistoryConversation
+          patientName={encounter.patientSummary.fullName}
+          symptoms={patientCase.selectedSymptoms}
+          patientSummary={encounter.patientSummary}
+          onComplete={completeHistory}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
+
+      {examOpen && (
+        <ExaminationFlow
+          vitals={encounter.visibleVitals}
+          symptomNames={patientCase.selectedSymptoms.map(s => s.name)}
+          onComplete={completeExamination}
+          onClose={() => setExamOpen(false)}
+        />
+      )}
 
       {/* Toast */}
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50
-          bg-gray-950 text-white text-sm px-5 py-3 rounded-2xl shadow-xl pointer-events-none">
-          {toast}
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+          <div className="bg-slate-950/95 backdrop-blur text-white text-sm px-5 py-2.5
+            rounded-2xl shadow-2xl font-medium">
+            {toast}
+          </div>
         </div>
       )}
 
-      {/* Top bar */}
-      <header className="bg-white border-b border-gray-100 sticky top-0 z-40">
-        <div className="max-w-4xl mx-auto px-6 h-16 flex items-center justify-between">
+      {/* Sticky header */}
+      <header className="bg-white/90 backdrop-blur-md border-b border-slate-100 sticky top-0 z-40">
+        <div className="max-w-4xl mx-auto px-5 h-14 flex items-center justify-between">
+
+          {/* Left: logo + dept */}
           <div className="flex items-center gap-3">
-            <span className="text-xl text-blue-950 font-semibold"
+            <span className="text-base text-slate-950 font-semibold tracking-tight"
               style={{ fontFamily: 'Georgia, serif' }}>
               Kairos
             </span>
-            <span className="text-gray-200 select-none">|</span>
-            <span className="text-sm text-gray-500">Emergency Department</span>
+            <span className="text-slate-200 select-none">·</span>
+            <span className="text-sm text-slate-400 hidden sm:block">Emergency</span>
           </div>
+
+          {/* Right: time + triage + pulse */}
           <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-400">
-              <span className="font-mono text-gray-700 font-semibold">{clinicalTime}</span>
-              {' '}min elapsed
-            </span>
-            <Badge label={triage.label} color={encounter.triagePriority} />
+            {/* Persistent mini vitals — ECG pulse indicator */}
+            {!isCompleted && (() => {
+              const hrVital = encounter.visibleVitals.find(v => v.parameter === 'Heart Rate');
+              const spo2Vital = encounter.visibleVitals.find(v => v.parameter === 'SpO₂');
+              return hrVital || spo2Vital ? (
+                <div className="hidden sm:flex items-center gap-3 bg-slate-50 rounded-xl px-3 py-1.5 border border-slate-100">
+                  {hrVital && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                      <span className={`font-mono text-xs font-semibold ${hrVital.isRedFlag ? 'text-red-600' : 'text-slate-700'}`}>
+                        {hrVital.value}
+                      </span>
+                      <span className="text-xs text-slate-400">bpm</span>
+                    </div>
+                  )}
+                  {hrVital && spo2Vital && (
+                    <span className="w-px h-3 bg-slate-200" />
+                  )}
+                  {spo2Vital && (
+                    <div className="flex items-center gap-1">
+                      <span className={`font-mono text-xs font-semibold ${spo2Vital.isRedFlag ? 'text-red-600' : spo2Vital.isAbnormal ? 'text-amber-600' : 'text-slate-700'}`}>
+                        {spo2Vital.value}%
+                      </span>
+                      <span className="text-xs text-slate-400">SpO₂</span>
+                    </div>
+                  )}
+                </div>
+              ) : null;
+            })()}
+
+            {/* Clinical time */}
+            <div className={`flex items-center gap-1.5 text-sm ${clinicalTime > 30 ? 'text-amber-600' : 'text-slate-500'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                isCompleted ? 'bg-slate-300' : clinicalTime > 30 ? 'bg-amber-400' : 'bg-emerald-400'
+              }`} />
+              <span className="font-mono font-semibold text-slate-900">{clinicalTime}</span>
+              <span className="text-slate-400 text-xs">min</span>
+            </div>
+
+            {/* Triage badge */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-50
+              border border-slate-100 text-xs font-semibold text-slate-600 tracking-wide">
+              <span className={`w-1.5 h-1.5 rounded-full ${triageInfo.dot}`} />
+              {triageInfo.label}
+            </div>
           </div>
+
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-4xl mx-auto px-5 py-6 space-y-5">
 
-        {/* Patient header card */}
-        <div className="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1">
-              <h1 className="text-3xl text-gray-950 tracking-tight"
-                style={{ fontFamily: 'Georgia, serif' }}>
+        {/* Patient identity card */}
+        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm relative overflow-hidden">
+          {/* Triage accent line */}
+          <div className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-3xl ${
+            encounter.triagePriority === 'red' ? 'bg-red-500' :
+            encounter.triagePriority === 'orange' ? 'bg-orange-400' :
+            encounter.triagePriority === 'yellow' ? 'bg-yellow-400' : 'bg-green-500'
+          }`} />
+
+          <div className="pl-4 flex items-start justify-between gap-4">
+            <div className="space-y-1 min-w-0">
+              <h1
+                className="text-2xl sm:text-3xl text-slate-950 tracking-tight font-normal truncate"
+                style={{ fontFamily: 'Georgia, serif' }}
+              >
                 {encounter.patientSummary.fullName}
               </h1>
-              <p className="text-gray-500 text-sm">
-                {encounter.patientSummary.age} yrs ·{' '}
+              <p className="text-slate-400 text-sm">
+                {encounter.patientSummary.age} years ·{' '}
                 {encounter.patientSummary.sex === 'male' ? 'Male' : 'Female'} ·{' '}
                 {encounter.patientSummary.occupation}
               </p>
             </div>
-            <div className="text-right text-xs text-gray-400 space-y-1 flex-shrink-0">
-              <p className="font-mono uppercase">{hospitalState.status}</p>
-              <p className="font-mono text-gray-300">{hospitalState.sessionId.slice(-8)}</p>
+            <div className="flex-shrink-0 text-right space-y-1">
+              <span className={`inline-block px-2.5 py-1 rounded-lg text-xs font-semibold tracking-wide ${
+                isCompleted ? 'bg-slate-100 text-slate-500' : 'bg-emerald-50 text-emerald-700'
+              }`}>
+                {isCompleted ? 'CLOSED' : 'ACTIVE'}
+              </span>
             </div>
           </div>
-          <div className="mt-4 pt-4 border-t border-gray-50">
-            <p className="text-sm text-gray-600 italic leading-relaxed">
+
+          {/* Chief complaint — patient's own words */}
+          <div className="pl-4 mt-4 pt-4 border-t border-slate-50">
+            <p className="text-sm text-slate-500 italic leading-relaxed">
               &ldquo;{encounter.chiefComplaint}&rdquo;
             </p>
           </div>
         </div>
 
-        {/* Completion banner */}
+        {/* Completion → reflection gateway */}
         {isCompleted && (
-          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 text-center space-y-1">
-            <p className="text-blue-900 font-semibold text-sm">
-              Encounter complete — {clinicalTime} clinical minutes
-            </p>
-            <p className="text-blue-400 text-xs">
-              Navigate to /reflection for your performance score.
-            </p>
+          <div
+            className="bg-slate-950 text-white rounded-3xl p-6 flex flex-col sm:flex-row
+              items-start sm:items-center justify-between gap-4"
+          >
+            <div className="space-y-1">
+              <p className="font-semibold">Encounter closed.</p>
+              <p className="text-slate-400 text-sm">
+                {clinicalTime} clinical minutes · {hs.events.length} events logged
+              </p>
+            </div>
+            <button
+              onClick={() => router.push('/reflection')}
+              className="flex-shrink-0 bg-white text-slate-950 px-5 py-2.5 rounded-xl
+                text-sm font-semibold hover:bg-slate-100 active:scale-[0.99]
+                transition-all duration-150"
+            >
+              View Performance Report →
+            </button>
           </div>
         )}
 
-        {/* Tab nav */}
-        <div className="flex gap-6 border-b border-gray-100 overflow-x-auto">
-          {(['overview', 'history', 'investigations', 'treatments', 'events'] as Tab[]).map(t => (
-            <TabButton
-              key={t}
-              active={activeTab === t}
-              label={t.charAt(0).toUpperCase() + t.slice(1)}
-              onClick={() => setActiveTab(t)}
-            />
+        {/* Tab navigation */}
+        <div className="flex items-center gap-6 sm:gap-8 border-b border-slate-100 overflow-x-auto pb-px">
+          {([
+            { id: 'overview',       label: 'Overview'     },
+            { id: 'history',        label: 'History',   count: hasTakenHistory ? undefined : 0 },
+            { id: 'investigations', label: 'Investigations', count: hs.orderedInvestigations.length },
+            { id: 'treatment',      label: 'Treatment',  count: hs.administeredTreatments.length },
+            { id: 'timeline',       label: 'Timeline',   count: hs.events.length },
+          ] as { id: Tab; label: string; count?: number }[]).map(({ id, label, count }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className={`pb-3 text-sm font-medium whitespace-nowrap transition-all duration-150 border-b-2 flex items-center gap-2 ${
+                activeTab === id
+                  ? 'border-slate-950 text-slate-950'
+                  : 'border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-200'
+              }`}
+            >
+              {label}
+              {count !== undefined && count > 0 && (
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${
+                  activeTab === id ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {count}
+                </span>
+              )}
+            </button>
           ))}
         </div>
 
-        {/* ── OVERVIEW ── */}
+        {/* ── OVERVIEW ─────────────────────────── */}
         {activeTab === 'overview' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <SectionCard title="Vital Signs">
-              <VitalsTable vitals={encounter.visibleVitals} />
-            </SectionCard>
+            {/* Vitals — always available from nursing triage */}
+            <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
+                  Vital Signs
+                </p>
+                <p className="text-xs text-slate-300 italic">Nursing assessment</p>
+              </div>
+              {encounter.visibleVitals.map((v, i) => (
+                <VitalsRow key={i} vital={v} />
+              ))}
+              <div className="mt-3 pt-3 border-t border-slate-50 flex items-center gap-4 text-xs text-slate-300">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400" /> Red flag
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Abnormal
+                </span>
+              </div>
+            </div>
 
             <div className="space-y-4">
-              <SectionCard title="Comorbidities">
-                <div className="divide-y divide-gray-50">
-                  {comorbidityRows.map(({ label, value }) => (
-                    <div key={label} className="flex justify-between items-center py-2.5">
-                      <span className="text-sm text-gray-600">{label}</span>
-                      <span className={`text-xs font-semibold ${
-                        value ? 'text-amber-600' : 'text-gray-300'
-                      }`}>
-                        {value ? 'YES' : 'NO'}
-                      </span>
-                    </div>
-                  ))}
+              {/* Examination findings — locked until examined */}
+              <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
+                    Physical Examination
+                  </p>
+                  {hasExamined && (
+                    <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-medium">
+                      Complete
+                    </span>
+                  )}
                 </div>
-              </SectionCard>
 
-              <SectionCard title="Session">
-                <div className="divide-y divide-gray-50">
-                  {sessionRows.map(({ label, value }) => (
-                    <div key={label} className="flex justify-between py-2.5">
-                      <span className="text-sm text-gray-500">{label}</span>
-                      <span className="font-mono text-sm font-semibold text-gray-900">
-                        {value}
-                      </span>
+                {!hasExamined ? (
+                  <div className="text-center py-4 space-y-4">
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Examination findings not yet assessed.
+                    </p>
+                    {!isCompleted && (
+                      <button
+                        onClick={() => setExamOpen(true)}
+                        className="w-full py-3 border-2 border-slate-200 text-slate-600 rounded-xl
+                          text-sm font-medium hover:border-slate-950 hover:text-slate-950
+                          transition-all duration-150"
+                      >
+                        Examine Patient →
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 text-sm text-slate-700 leading-relaxed">
+                    <p>✓ General inspection performed</p>
+                    <p>✓ Cardiovascular assessment</p>
+                    <p>✓ Respiratory assessment</p>
+                    <p>✓ Neurological screen</p>
+                    <button
+                      onClick={() => setActiveTab('overview')}
+                      className="text-xs text-slate-400 hover:text-slate-600 mt-1
+                        underline underline-offset-2 transition-colors"
+                    >
+                      View detailed findings in History tab
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Session summary */}
+              <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4">
+                  Session
+                </p>
+                <div className="space-y-0">
+                  {([
+                    ['Clinical actions',  hs.completedActions.length],
+                    ['Investigations',    hs.orderedInvestigations.length],
+                    ['Treatments',        hs.administeredTreatments.length],
+                  ] as [string, number][]).map(([label, val]) => (
+                    <div key={label} className="flex justify-between items-center py-2.5 border-b border-slate-50 last:border-0">
+                      <span className="text-sm text-slate-500">{label}</span>
+                      <span className="font-mono text-sm font-semibold text-slate-900">{val}</span>
                     </div>
                   ))}
                 </div>
-              </SectionCard>
+              </div>
 
               {!isCompleted && (
-                <Btn
-                  label="Complete Encounter →"
+                <button
                   onClick={doCompleteEncounter}
-                  variant="secondary"
-                />
+                  className="w-full py-3 border border-slate-200 text-slate-500 rounded-2xl
+                    text-sm font-medium hover:border-slate-400 hover:text-slate-700
+                    transition-all duration-150"
+                >
+                  Complete Encounter →
+                </button>
               )}
             </div>
           </div>
         )}
 
-        {/* ── HISTORY ── */}
+        {/* ── HISTORY ──────────────────────────── */}
         {activeTab === 'history' && (
           <div className="space-y-4">
-            <SectionCard title="History of Present Illness">
-              <p className="text-gray-700 text-base leading-relaxed">
-                {encounter.history}
-              </p>
-            </SectionCard>
-
-            {!isCompleted && (
-              <SectionCard title="Available Clinical Actions">
-                <div className="flex flex-wrap gap-2">
-                  {encounter.availableActions.map(action => (
-                    <Btn
-                      key={action}
-                      label={action}
-                      onClick={() => doCompleteAction(action)}
-                      variant="secondary"
-                    />
-                  ))}
+            {!hasTakenHistory && !isCompleted && (
+              <div className="bg-white border border-slate-100 rounded-2xl p-8 shadow-sm text-center space-y-5">
+                <div className="space-y-2">
+                  <p className="text-lg text-slate-800 font-normal" style={{ fontFamily: 'Georgia, serif' }}>
+                    {encounter.patientSummary.fullName} is waiting.
+                  </p>
+                  <p className="text-sm text-slate-500 leading-relaxed max-w-xs mx-auto">
+                    Introduce yourself. Ask about the presenting complaint and background history.
+                  </p>
                 </div>
-              </SectionCard>
+                <button
+                  onClick={() => setHistoryOpen(true)}
+                  className="px-8 py-3.5 bg-slate-950 text-white rounded-2xl text-sm font-semibold
+                    hover:bg-slate-800 active:scale-[0.99] transition-all duration-150
+                    shadow-lg shadow-slate-950/10"
+                >
+                  Take History →
+                </button>
+              </div>
+            )}
+
+            {hasTakenHistory && (
+              <div className="space-y-4">
+                {/* Gathered history */}
+                <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4">
+                    Medical Background
+                  </p>
+                  <div className="space-y-0">
+                    {([
+                      ['Smoking',       encounter.patientSummary.isSmoker ? 'Active smoker' : 'Non-smoker'],
+                      ['Diabetes',      encounter.patientSummary.hasDiabetes ? 'Present' : 'None'],
+                      ['Hypertension',  encounter.patientSummary.hasHypertension ? 'Present' : 'None'],
+                      ['Previous MI',   encounter.patientSummary.hasPreviousMI ? 'Yes — previous cardiac history' : 'None'],
+                    ] as [string, string][]).map(([label, value]) => (
+                      <div key={label} className="flex justify-between items-center py-2.5 border-b border-slate-50 last:border-0">
+                        <span className="text-sm text-slate-500">{label}</span>
+                        <span className={`text-sm font-medium ${
+                          value === 'None' || value === 'Non-smoker' ? 'text-slate-400' : 'text-slate-800'
+                        }`}>
+                          {value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Symptom summary from conversation */}
+                <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4">
+                    Presenting Symptoms
+                  </p>
+                  <div className="space-y-2">
+                    {patientCase.selectedSymptoms.map((s) => (
+                      <div key={s.id} className="flex items-start gap-3 py-2 border-b border-slate-50 last:border-0">
+                        <span className={`flex-shrink-0 w-1.5 h-1.5 rounded-full mt-1.5 ${
+                          s.isRedFlag ? 'bg-red-500' : 'bg-slate-300'
+                        }`} />
+                        <div>
+                          <p className="text-sm font-medium text-slate-700">{s.name}</p>
+                          <p className="text-xs text-slate-400 italic mt-0.5">
+                            &ldquo;{s.patientPhrase}&rdquo;
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Examination findings (shown in history tab after exam) */}
+            {hasTakenHistory && hasExamined && (
+              <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
+                    Examination Findings
+                  </p>
+                  <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                    Complete ✓
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Examination performed at {
+                    hs.completedActions.find(a => a.action === 'Physical Examination')?.clinicalMinutes ?? '?'
+                  } min. See Overview for vital sign details.
+                </p>
+              </div>
+            )}
+
+            {/* Additional bedside actions */}
+            {!isCompleted && (
+              <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
+                  Bedside Actions
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {!hasExamined && (
+                    <button
+                      onClick={() => setExamOpen(true)}
+                      className="px-4 py-2 rounded-xl text-sm font-medium border-2 border-slate-200
+                        text-slate-600 hover:border-slate-950 hover:text-slate-950
+                        transition-all duration-150"
+                    >
+                      Physical Examination
+                    </button>
+                  )}
+                  <button
+                    onClick={() => advanceTime('View Vital Signs')}
+                    className="px-4 py-2 rounded-xl text-sm font-medium bg-slate-50 text-slate-600
+                      hover:bg-slate-100 transition-colors"
+                  >
+                    Review Vitals <span className="text-xs text-slate-400 ml-1">+2m</span>
+                  </button>
+                  <button
+                    onClick={() => advanceTime('Observe')}
+                    className="px-4 py-2 rounded-xl text-sm font-medium bg-slate-50 text-slate-600
+                      hover:bg-slate-100 transition-colors"
+                  >
+                    Observe Patient <span className="text-xs text-slate-400 ml-1">+15m</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* History locked state (not yet taken, encounter completed) */}
+            {!hasTakenHistory && isCompleted && (
+              <div className="bg-white border border-slate-100 rounded-2xl p-8 text-center">
+                <p className="text-slate-400 text-sm">History was not taken during this encounter.</p>
+              </div>
             )}
           </div>
         )}
 
-        {/* ── INVESTIGATIONS ── */}
+        {/* ── INVESTIGATIONS ────────────────────── */}
         {activeTab === 'investigations' && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {disease.investigations.map(inv => {
-              const order  = hospitalState.orderedInvestigations
-                .find(o => o.investigationId === inv.id);
+              const order  = hs.orderedInvestigations.find(o => o.investigationId === inv.id);
               const report = reportsByInvId.get(inv.id);
 
               return (
-                <SectionCard key={inv.id}>
+                <div key={inv.id}
+                  className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
                   <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 space-y-1.5">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="font-semibold text-gray-900">{inv.name}</h4>
-                        <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                        <h4 className="font-semibold text-slate-900">{inv.name}</h4>
+                        <span className="text-xs text-slate-400 bg-slate-50 px-2 py-0.5 rounded-md">
                           {inv.type}
                         </span>
                         {inv.priority === InvestigationPriority.Mandatory && (
-                          <span className="text-xs text-red-700 bg-red-50 px-2 py-0.5 rounded-full">
+                          <span className="text-xs text-red-700 bg-red-50 px-2 py-0.5 rounded-md font-medium">
                             Mandatory
                           </span>
                         )}
                       </div>
+
                       {order && !report && (
-                        <p className="text-xs text-amber-500 mt-1">Pending…</p>
+                        <div className="flex items-center gap-1.5 text-xs text-amber-600">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                          Processing…
+                        </div>
                       )}
                     </div>
 
-                    {!order && !isCompleted && (
-                      <Btn
-                        label="Order"
-                        onClick={() => doOrderInvestigation(inv.id)}
-                        variant="primary"
-                      />
-                    )}
-                    {report && (
-                      <span className="text-xs text-green-700 bg-green-50 px-2 py-1
-                        rounded-full whitespace-nowrap flex-shrink-0">
-                        Resulted ✓
-                      </span>
-                    )}
+                    <div className="flex-shrink-0">
+                      {!order && !isCompleted && (
+                        <button
+                          onClick={() => doOrderInvestigation(inv.id)}
+                          className="px-4 py-2 bg-slate-950 text-white rounded-xl text-sm
+                            font-medium hover:bg-slate-800 active:scale-[0.99] transition-all duration-150"
+                        >
+                          Order
+                        </button>
+                      )}
+                      {report && (
+                        <span className="text-xs text-emerald-700 bg-emerald-50 px-2.5 py-1
+                          rounded-full font-semibold">
+                          Resulted
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  {report && <InvestigationResultCard report={report} />}
-                </SectionCard>
+                  {report && <InvestigationResultPanel report={report} />}
+                </div>
               );
             })}
           </div>
         )}
 
-        {/* ── TREATMENTS ── */}
-        {activeTab === 'treatments' && (
-          <div className="space-y-4">
-            <SectionCard title="Indicated Treatments">
-              <div className="space-y-6 divide-y divide-gray-50">
+        {/* ── TREATMENT ─────────────────────────── */}
+        {activeTab === 'treatment' && (
+          <div className="space-y-3">
+            <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-5">
+                Indicated Treatments
+              </p>
+              <div className="space-y-7 divide-y divide-slate-50">
                 {disease.treatments.correct.map(ref => {
                   const medicine   = MedicineRegistry.getById(ref.medicineId);
                   const rule       = medicine?.doseRules.find(r => r.population === 'adult');
-                  const isAdminned = hospitalState.administeredTreatments
-                    .some(t => t.medicineId === ref.medicineId);
+                  const isAdminned = hs.administeredTreatments.some(t => t.medicineId === ref.medicineId);
                   const evalResult = resultsByMedId.get(ref.medicineId);
 
-                  // Dose hint string — only when rule and numeric dose exist
-                  const doseHint = rule && rule.dose.value !== null
-                    ? `e.g. ${rule.dose.value}${rule.dose.unit}${rule.dose.weightBased ? '/kg' : ''}`
+                  const doseHint  = rule && rule.dose.value !== null
+                    ? `${rule.dose.value}${rule.dose.unit}${rule.dose.weightBased ? '/kg' : ''}`
                     : 'Dose';
-
-                  const routeHint = rule ? `e.g. ${rule.route}` : 'Route';
+                  const routeHint = rule ? String(rule.route).replace(/_/g, ' ') : 'Route';
 
                   return (
-                    <div key={ref.medicineId} className="pt-6 first:pt-0">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 min-w-0">
+                    <div key={ref.medicineId} className="pt-7 first:pt-0">
+                      <div className="flex items-start justify-between gap-4 mb-3">
+                        <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h4 className="font-semibold text-gray-900">
+                            <h4 className="font-semibold text-slate-900">
                               {medicine?.genericName ?? ref.medicineId}
                             </h4>
                             {ref.priority === TreatmentPriority.Mandatory && (
-                              <span className="text-xs text-red-700 bg-red-50 px-2 py-0.5 rounded-full">
+                              <span className="text-xs text-red-700 bg-red-50 px-2 py-0.5 rounded-md font-medium">
                                 Mandatory
                               </span>
                             )}
                             {ref.timing === TreatmentTiming.Immediate && (
-                              <span className="text-xs text-orange-700 bg-orange-50 px-2 py-0.5 rounded-full">
+                              <span className="text-xs text-orange-700 bg-orange-50 px-2 py-0.5 rounded-md">
                                 Immediate
                               </span>
                             )}
                           </div>
                           {rule && (
-                            <p className="text-xs text-gray-400 mt-0.5">
-                              {doseHint} · {rule.route}
+                            <p className="text-xs text-slate-400">
+                              {doseHint} · {routeHint}
+                              {rule.dose.titratable ? ' · titrate to effect' : ''}
                             </p>
                           )}
                         </div>
+                        {isAdminned && !evalResult && (
+                          <span className="text-xs text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full font-semibold flex-shrink-0">
+                            Evaluating…
+                          </span>
+                        )}
                       </div>
 
                       {!isCompleted && (
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2 mt-3">
                           <input
                             type="text"
                             placeholder={doseHint}
                             value={doseInput[ref.medicineId] ?? ''}
-                            onChange={e => setDoseInput(p => ({
-                              ...p, [ref.medicineId]: e.target.value,
-                            }))}
-                            className="border border-gray-200 rounded-xl px-3 py-2 text-sm w-44
-                              focus:outline-none focus:ring-2 focus:ring-blue-950/20"
+                            onChange={e => setDoseInput(p => ({ ...p, [ref.medicineId]: e.target.value }))}
+                            className="border border-slate-200 rounded-xl px-3 py-2 text-sm w-44
+                              focus:outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-200
+                              placeholder:text-slate-300 transition-all duration-150"
                           />
                           <input
                             type="text"
                             placeholder={routeHint}
                             value={routeInput[ref.medicineId] ?? ''}
-                            onChange={e => setRouteInput(p => ({
-                              ...p, [ref.medicineId]: e.target.value,
-                            }))}
-                            className="border border-gray-200 rounded-xl px-3 py-2 text-sm w-36
-                              focus:outline-none focus:ring-2 focus:ring-blue-950/20"
+                            onChange={e => setRouteInput(p => ({ ...p, [ref.medicineId]: e.target.value }))}
+                            className="border border-slate-200 rounded-xl px-3 py-2 text-sm w-36
+                              focus:outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-200
+                              placeholder:text-slate-300 transition-all duration-150"
                           />
-                          <Btn
-                            label={isAdminned ? 'Re-administer' : 'Administer'}
+                          <button
                             onClick={() => doAdministerTreatment(ref.medicineId)}
-                            variant={isAdminned ? 'secondary' : 'primary'}
-                          />
+                            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-150 ${
+                              isAdminned
+                                ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                : 'bg-slate-950 text-white hover:bg-slate-800 shadow-sm shadow-slate-950/10'
+                            }`}
+                          >
+                            {isAdminned ? 'Re-administer' : 'Administer'}
+                          </button>
                         </div>
                       )}
 
-                      {evalResult && <TreatmentResultCard result={evalResult} />}
+                      {evalResult && <TreatmentResultPanel result={evalResult} />}
                     </div>
                   );
                 })}
               </div>
-            </SectionCard>
+            </div>
           </div>
         )}
 
-        {/* ── EVENTS ── */}
-        {activeTab === 'events' && (
-          <SectionCard title="Audit Event Log">
-            <div className="divide-y divide-gray-50">
-              {hospitalState.events.map((event, i) => (
-                <div key={i} className="flex items-start gap-4 py-3">
-                  <span className="font-mono text-xs text-gray-400 w-10 flex-shrink-0 pt-0.5">
-                    {event.clinicalMinutes}m
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <span className="text-xs font-semibold text-blue-950 bg-blue-50
-                      px-2 py-0.5 rounded-md">
-                      {event.type}
-                    </span>
-                    {Object.keys(event.payload).length > 0 && (
-                      <p className="text-xs text-gray-400 mt-1 font-mono truncate">
-                        {JSON.stringify(event.payload)}
-                      </p>
-                    )}
-                  </div>
+        {/* ── TIMELINE ──────────────────────────── */}
+        {activeTab === 'timeline' && (
+          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-5">
+              Encounter Timeline
+            </p>
+
+            {hs.events.length === 0 ? (
+              <p className="text-slate-400 text-sm text-center py-6">No events yet.</p>
+            ) : (
+              <div className="relative">
+                {/* Connector line */}
+                <div className="absolute left-[1.85rem] top-3 bottom-3 w-px bg-slate-100" />
+
+                <div className="space-y-4">
+                  {hs.events.map((event, i) => {
+                    const isKey = ['INVESTIGATION_RESULTED', 'TREATMENT_EVALUATED',
+                                   'ENCOUNTER_COMPLETED', 'SESSION_STARTED'].includes(event.type);
+                    return (
+                      <div key={i} className="flex gap-4">
+                        {/* Time + dot */}
+                        <div className="flex-shrink-0 flex flex-col items-center w-12 pt-0.5">
+                          <span className="font-mono text-xs text-slate-400 mb-1.5">
+                            {event.clinicalMinutes}m
+                          </span>
+                          <div className={`w-2.5 h-2.5 rounded-full border-2 z-10 ${
+                            isKey
+                              ? 'bg-slate-950 border-slate-950'
+                              : 'bg-white border-slate-300'
+                          }`} />
+                        </div>
+
+                        {/* Event content */}
+                        <div className="flex-1 pb-4 last:pb-0">
+                          <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-md ${
+                            isKey
+                              ? 'bg-slate-950 text-white'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {event.type.replace(/_/g, ' ')}
+                          </span>
+                          {Object.keys(event.payload).length > 0 && (
+                            <p className="text-xs text-slate-400 font-mono mt-1 leading-relaxed">
+                              {Object.entries(event.payload)
+                                .map(([k, v]) => `${k}: ${String(v)}`)
+                                .join(' · ')}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
-          </SectionCard>
+              </div>
+            )}
+          </div>
         )}
 
       </main>
