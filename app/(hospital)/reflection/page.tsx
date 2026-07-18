@@ -80,7 +80,8 @@ export default function ReflectionPage() {
         patientCase: state.patientCase,
       };
       return scoreEncounter(ctx);
-    } catch {
+    } catch (err) {
+      console.error('Failed to score encounter:', err);
       return null;
     }
   }, [state.session, state.disease, state.patientCase]);
@@ -96,7 +97,8 @@ export default function ReflectionPage() {
         disease:                state.disease,
       };
       return generateReflection(ctx);
-    } catch {
+    } catch (err) {
+      console.error('Failed to generate reflection:', err);
       return null;
     }
   }, [score, state.disease, state.postCaseInvestigations, state.postCaseTreatments]);

@@ -61,7 +61,7 @@ export default function LandingPage() {
       oscillator.start();
       oscillator.stop(audioCtx.currentTime + 0.75);
     } catch (error) {
-      console.warn('Audio permissions deferred context creation.');
+      console.warn('Audio permissions deferred context creation.', error);
     }
   };
 
