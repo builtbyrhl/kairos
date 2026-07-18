@@ -155,7 +155,7 @@ export default function LandingPage() {
         receptionDeskRef.current.classList.remove('arrived');
       }
       if (activePulseLineRef.current) {
-        activePulseLineRef.current.className = 'ecg-line-active';
+        activePulseLineRef.current.setAttribute('class', 'ecg-line-active');
       }
       setIsTransitioning(false);
 
