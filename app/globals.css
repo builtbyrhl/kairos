@@ -1,26 +1,834 @@
 @import "tailwindcss";
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap');
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg-pure: #ffffff;
+  --text-main: #0A1128;
+  --text-muted: #8E9CAE;
+  --medical-blue: #0066FF;
+  --card-glass: rgba(255, 255, 255, 0.3);
+  --card-border: rgba(10, 17, 40, 0.015);
+  /* Ultra-smooth customized ease for slow premium shifts */
+  --ease-intent: cubic-bezier(0.25, 1, 0.2, 1);
+  --ease-in-out-fine: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--bg-pure);
+  --color-foreground: var(--text-main);
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--bg-pure);
+  color: var(--text-main);
+  font-family: 'Inter', sans-serif;
+  min-height: 100vh;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* Film Grain Overlay (<1.2% Visibility) */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+  opacity: 0.012;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+}
+
+/* Background Layout Blueprint Elements */
+.ambient-environment {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+  transition: opacity 1.8s var(--ease-intent), background-color 1.8s var(--ease-intent);
+}
+
+.blueprint-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.8;
+  pointer-events: none;
+  z-index: 1;
+  transition: opacity 1.6s var(--ease-intent);
+}
+
+.ambient-glow-primary {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90vw;
+  height: 90vw;
+  background: radial-gradient(circle, rgba(0, 102, 255, 0.015) 0%, rgba(255, 255, 255, 0) 65%);
+  mix-blend-mode: multiply;
+  z-index: 2;
+  transition: background 1.5s var(--ease-intent), transform 1.5s var(--ease-intent), opacity 1.5s var(--ease-intent);
+}
+
+/* Navigation Header */
+header {
+  padding: 40px 80px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 10;
+  transition: opacity 1.4s var(--ease-intent), transform 1.4s var(--ease-intent);
+}
+
+.nav-brand {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-main);
+  text-decoration: none;
+}
+
+/* Premium Liquid Glass Capsule with Refracted Contrast Borders */
+.nav-links-capsule {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(10, 17, 40, 0.05);
+  border-radius: 999px;
+  padding: 10px 26px;
+  box-shadow: 
+    0 4px 20px rgba(10, 17, 40, 0.02), 
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 1px 2px rgba(10, 17, 40, 0.01);
+  transition: 
+    background-color 0.4s var(--ease-intent),
+    border-color 0.4s var(--ease-intent),
+    box-shadow 0.4s var(--ease-intent);
+}
+
+.nav-links-capsule:hover {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(10, 17, 40, 0.1);
+  box-shadow: 
+    0 12px 30px rgba(10, 17, 40, 0.05), 
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.capsule-link {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text-main);
+  text-decoration: none;
+  opacity: 0.7;
+  transition: opacity 0.3s var(--ease-intent), transform 0.3s var(--ease-intent);
+}
+
+.capsule-link:hover {
+  opacity: 1;
+  transform: translateY(-0.5px);
+}
+
+/* Central Workspace Composition */
+main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 80px;
+  z-index: 5;
+  position: relative;
+}
+
+.brand-axis {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 800px;
+  position: relative;
+  z-index: 6;
+  margin-top: -90px;
+  transition: opacity 1.4s var(--ease-intent), transform 1.4s var(--ease-intent);
+}
+
+.title-group {
+  position: relative;
+  display: inline-block;
+  margin-bottom: 48px;
+  transition: transform 1.6s var(--ease-intent);
+}
+
+.hero-title {
+  font-size: clamp(85px, 9.5vw, 145px);
+  font-weight: 500;
+  letter-spacing: -0.05em;
+  line-height: 0.9;
+  color: var(--text-main);
+  position: relative;
+  transition: opacity 1.2s var(--ease-intent);
+}
+
+.brand-vertex {
+  position: absolute;
+  top: 22%;
+  right: -12px;
+  width: 4px;
+  height: 4px;
+  background-color: var(--medical-blue);
+  border-radius: 50%;
+  z-index: 7;
+  transition: transform 1.6s var(--ease-intent), opacity 1.2s var(--ease-intent);
+}
+
+.brand-vertex::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border: 0.5px solid rgba(0, 102, 255, 0.25);
+  border-radius: 50%;
+  transform: scale(0.85);
+}
+
+/* ECG Segment Container */
+.ecg-signature-container {
+  width: 100%;
+  height: 30px;
+  margin-top: -4px;
+  position: relative;
+  overflow: visible;
+  transition: transform 1.6s var(--ease-intent), opacity 1.2s var(--ease-intent);
+}
+
+.ecg-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.ecg-line-static {
+  stroke: var(--medical-blue);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  opacity: 0.09;
+  transition: opacity 1.4s var(--ease-intent);
+}
+
+.ecg-line-active {
+  stroke: var(--medical-blue);
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  stroke-dasharray: 120 480;
+  stroke-dashoffset: 600;
+  opacity: 0;
+  transition: stroke-width 0.4s var(--ease-intent);
+}
+
+/* Natural Physiological ECG Heartbeat animations (approx 58 BPM with custom Rest curve) */
+.ecg-line-active.pulse-sweep {
+  animation: ecgSweep 850ms cubic-bezier(0.25, 1, 0.35, 1) forwards;
+}
+
+.ecg-line-active.pulse-strong {
+  animation: ecgSweepStrong 850ms cubic-bezier(0.2, 1, 0.3, 1) forwards;
+}
+
+/* Transition state single heartbeat (pushed during shift timeline) */
+.ecg-line-active.pulse-active {
+  animation: singleHeartbeat 1.5s cubic-bezier(0.25, 1, 0.35, 1) forwards;
+}
+
+/* Clinical sweep keyframe with enhanced, gorgeous dual-glow drop shadow */
+@keyframes ecgSweep {
+  0% {
+    stroke-dashoffset: 600;
+    filter: drop-shadow(0 0 1px rgba(0, 102, 255, 0.2));
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  85% {
+    filter: drop-shadow(0 0 2px rgba(0, 102, 255, 0.6)) drop-shadow(0 0 10px rgba(0, 102, 255, 0.3));
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: -120;
+    filter: drop-shadow(0 0 0px rgba(0, 102, 255, 0));
+    opacity: 0;
+  }
+}
+
+/* Enhanced tactile sweep keyframe for Begin Shift hover */
+@keyframes ecgSweepStrong {
+  0% {
+    stroke-dashoffset: 600;
+    filter: drop-shadow(0 0 2px rgba(0, 102, 255, 0.3));
+    stroke-width: 2.75;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  85% {
+    filter: drop-shadow(0 0 3px rgba(0, 102, 255, 0.8)) drop-shadow(0 0 16px rgba(0, 102, 255, 0.45));
+    stroke-width: 2.75;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: -120;
+    filter: drop-shadow(0 0 0px rgba(0, 102, 255, 0));
+    stroke-width: 2.25;
+    opacity: 0;
+  }
+}
+
+/* Transition sweep keyframe (1.5s duration) */
+@keyframes singleHeartbeat {
+  0% { stroke-dashoffset: 600; filter: drop-shadow(0 0 0px rgba(0, 102, 255, 0)); }
+  15% { opacity: 1; }
+  85% { stroke-dashoffset: -120; filter: drop-shadow(0 0 12px rgba(0, 102, 255, 0.7)) drop-shadow(0 0 2px rgba(0, 102, 255, 0.4)); opacity: 1; }
+  100% { stroke-dashoffset: -120; opacity: 0; }
+}
+
+.tagline {
+  font-size: clamp(18px, 2vw, 23px);
+  font-weight: 400;
+  color: var(--text-muted);
+  letter-spacing: -0.02em;
+  margin-bottom: 104px;
+  transition: opacity 1s var(--ease-intent);
+}
+
+.btn-action {
+  background-color: var(--text-main);
+  color: var(--bg-pure);
+  border: none;
+  padding: 18px 48px;
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  border-radius: 100px;
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.8s var(--ease-intent), box-shadow 0.8s var(--ease-intent), background-color 0.8s var(--ease-intent), opacity 0.8s var(--ease-intent);
+  box-shadow: 0 10px 35px rgba(10, 17, 40, 0.02);
+}
+
+.btn-action:hover {
+  transform: translateY(-2px);
+  background-color: #0c142b;
+  box-shadow: 0 25px 50px rgba(10, 17, 40, 0.05);
+}
+
+/* Background Patient Cards */
+.atmospheric-peripheral {
+  position: absolute;
+  right: 6%;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  z-index: 2;
+  transition: opacity 1.4s var(--ease-intent), transform 1.4s var(--ease-intent);
+}
+
+.patient-ghost-card {
+  background: var(--card-glass);
+  border: 1px solid var(--card-border);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border-radius: 24px;
+  padding: 38px;
+  width: 300px;
+  opacity: 0.08;
+  box-shadow: 0 40px 90px rgba(10, 17, 40, 0.005), inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  transition: opacity 1.4s var(--ease-intent);
+}
+
+.card-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.meta-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.triage-indicator-ambient {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.triage-pulse-dot {
+  width: 5px;
+  height: 5px;
+  background-color: var(--text-muted);
+  border-radius: 50%;
+  opacity: 0.3;
+}
+
+.demographics-container {
+  transition: opacity 1.2s var(--ease-intent);
+}
+
+.demographics-primary {
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  color: var(--text-main);
+  margin-bottom: 2px;
+  filter: blur(4px);
+  opacity: 0.45;
+}
+
+.demographics-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.complaint-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: opacity 1.2s var(--ease-intent);
+}
+
+.complaint-val {
+  font-size: 13px;
+  font-family: monospace;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  filter: blur(2px);
+}
+
+/* Footer */
+footer {
+  padding: 40px 80px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 10;
+  transition: opacity 1.4s var(--ease-intent), transform 1.4s var(--ease-intent);
+}
+
+.footer-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: -0.01em;
+}
+
+/* ==========================================================================
+   TRANSITION STATE MACHINE SYSTEM
+   ========================================================================== */
+
+/* Shroud overlay that fades to solid white during threshold (Phase 5) - Slowed to 1.0s */
+.threshold-shroud {
+  position: fixed;
+  inset: 0;
+  background-color: #ffffff;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 95;
+  transition: opacity 1s cubic-bezier(0.42, 0, 0.58, 1);
+}
+
+/* System Terminal Overlay (Phase 4) */
+.terminal-container {
+  position: fixed;
+  inset: 0;
+  z-index: 85;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1s var(--ease-intent);
+}
+
+.terminal-content {
+  width: 100%;
+  max-width: 500px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: left;
+  padding: 0 40px;
+}
+
+.terminal-line {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--text-main);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.6s var(--ease-intent), transform 0.6s var(--ease-intent);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.terminal-line.active {
+  opacity: 0.85;
+  transform: translateY(0);
+}
+
+.terminal-line.ready {
+  color: var(--medical-blue);
+  font-weight: 500;
+}
+
+/* Subtle terminal initialization dot */
+.terminal-dot {
+  width: 4px;
+  height: 4px;
+  background-color: var(--medical-blue);
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* Ambient Initialization Metadata */
+.init-metadata-container {
+  position: absolute;
+  bottom: 80px;
+  left: 80px;
+  right: 80px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 1.2s var(--ease-intent), transform 1.2s var(--ease-intent);
+}
+
+.metadata-column {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.metadata-val {
+  color: var(--text-main);
+  opacity: 0.6;
+}
+
+/* ==========================================================================
+   RECEPTION DESTINATION INTERFACE (PHASE 6 - SLOW VISION ADJUSTMENT)
+   ========================================================================== */
+.reception-environment {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background-color: #FAFAFB;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  opacity: 0;
+  filter: blur(35px);
+  pointer-events: none;
+  transform: scale(1.03);
+  transition: opacity 2.2s cubic-bezier(0.16, 1, 0.3, 1), 
+    filter 2.4s cubic-bezier(0.16, 1, 0.3, 1), 
+    transform 2.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Active Arrival State */
+.reception-environment.arrived {
+  opacity: 1;
+  filter: blur(0px);
+  pointer-events: all;
+  transform: scale(1);
+}
+
+.reception-header {
+  padding: 40px 80px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(10, 17, 40, 0.02);
+  background: #ffffff;
+}
+
+.reception-title-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.badge-live {
+  background-color: rgba(0, 102, 255, 0.06);
+  color: var(--medical-blue);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 100px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.reception-body {
+  flex: 1;
+  padding: 80px;
+  display: grid;
+  grid-template-columns: 1.8fr 1fr;
+  gap: 80px;
+  max-width: 1800px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.clinical-queue-section {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 1px solid rgba(10, 17, 40, 0.03);
+  padding-bottom: 16px;
+}
+
+.section-header h2 {
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.queue-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.queue-table th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  padding-bottom: 16px;
+  font-weight: 600;
+}
+
+.queue-table td {
+  padding: 18px 0;
+  border-bottom: 1px solid rgba(10, 17, 40, 0.02);
+  font-size: 14px;
+}
+
+.patient-id {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-muted);
+}
+
+.triage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.triage-dot-critical {
+  width: 6px;
+  height: 6px;
+  background-color: #E11D48;
+  border-radius: 50%;
+}
+
+.triage-dot-urgent {
+  width: 6px;
+  height: 6px;
+  background-color: #F59E0B;
+  border-radius: 50%;
+}
+
+.reception-details-panel {
+  background: #ffffff;
+  border: 1px solid rgba(10, 17, 40, 0.03);
+  border-radius: 20px;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 20px 50px rgba(10, 17, 40, 0.01);
+}
+
+.panel-metadata-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(10, 17, 40, 0.02);
+  font-size: 13px;
+}
+
+.panel-metadata-row span:first-child {
+  color: var(--text-muted);
+}
+
+.panel-metadata-row span:last-child {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-main);
+}
+
+.btn-system-reset {
+  background: none;
+  border: 1px solid rgba(10, 17, 40, 0.08);
+  padding: 12px 24px;
+  border-radius: 100px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.4s var(--ease-intent);
+}
+
+.btn-system-reset:hover {
+  border-color: var(--text-main);
+  color: var(--text-main);
+}
+
+/* ==========================================================================
+   TRANSITION ANIMATION TRIGGERS (CLASSES ASSIGNED BY TIMELINE JS)
+   ========================================================================== */
+
+/* Phase 1: Commitment Freeze (Button depressed, interface static) */
+body.p1-commitment .btn-action {
+  transform: scale(0.96);
+  background-color: #050b1a;
+  pointer-events: none;
+}
+
+/* Phase 2: Environmental Dissolve */
+body.p2-environmental-shift header {
+  opacity: 0;
+  transform: translateY(-12px);
+  pointer-events: none;
+}
+
+body.p2-environmental-shift footer {
+  opacity: 0;
+  transform: translateY(12px);
+  pointer-events: none;
+}
+
+body.p2-environmental-shift .tagline,
+body.p2-environmental-shift .btn-action {
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.p2-environmental-shift .atmospheric-peripheral {
+  opacity: 0;
+  transform: translateY(-50%) scale(0.96);
+  pointer-events: none;
+}
+
+body.p2-environmental-shift .blueprint-overlay {
+  opacity: 0.10;
+}
+
+body.p2-environmental-shift .ambient-environment {
+  background-color: #f5f8fc;
+}
+
+/* Phase 3: The Heartbeat Sweep */
+body.p3-heartbeat .ecg-line-active {
+  opacity: 1;
+}
+
+body.p3-heartbeat .ambient-glow-primary {
+  background: radial-gradient(circle, rgba(0, 102, 255, 0.07) 0%, rgba(255, 255, 255, 0) 65%);
+  transform: translate(-50%, -50%) scale(1.08);
+}
+
+/* Phase 4: Hospital Systems Initialization */
+body.p4-systems-initialize .hero-title,
+body.p4-systems-initialize .brand-vertex {
+  opacity: 0;
+  transform: translateY(-12px);
+}
+
+body.p4-systems-initialize .title-group {
+  transform: scale(0.97);
+}
+
+body.p4-systems-initialize .ecg-signature-container {
+  transform: translateY(-24px);
+  opacity: 0.8;
+}
+
+body.p4-systems-initialize .terminal-container {
+  opacity: 1;
+}
+
+body.p4-systems-initialize .init-metadata-container {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Phase 5: White Threshold Cover System */
+body.p5-threshold .threshold-shroud {
+  opacity: 1;
+}
+
+body.p5-threshold .ecg-signature-container {
+  transform: scaleY(0.1) translateY(-24px);
+  opacity: 0;
+  transition: opacity 0.8s var(--ease-intent);
+}
+
+/* Responsive Design Elements */
+@media (max-width: 1200px) {
+  .atmospheric-peripheral {
+    display: none;
+  }
+  .reception-body {
+    grid-template-columns: 1fr;
+    gap: 40px;
+    padding: 40px;
+  }
+  header, footer {
+    padding: 32px 40px;
+  }
 }
