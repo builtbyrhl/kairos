@@ -1,3 +1,4 @@
+import { AmbientProvider } from '../../lib/context/AmbientContext';
 import { SessionProvider } from '../../lib/context/SessionContext';
 
 export default function HospitalLayout({
@@ -6,10 +7,12 @@ export default function HospitalLayout({
   children: React.ReactNode;
 }) {
   return (
-    <SessionProvider>
-      <div className="min-h-screen bg-white">
-        {children}
-      </div>
-    </SessionProvider>
+    <AmbientProvider>
+      <SessionProvider>
+        <div className="min-h-screen bg-white">
+          {children}
+        </div>
+      </SessionProvider>
+    </AmbientProvider>
   );
 }
