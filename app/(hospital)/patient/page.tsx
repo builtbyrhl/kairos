@@ -465,12 +465,12 @@ export default function PatientPage() {
               </p>
             </div>
             <button
-              onClick={() => router.push('/reflection')}
+              onClick={() => router.push('/outcome')}
               className="flex-shrink-0 bg-white text-slate-950 px-5 py-2.5 rounded-xl
                 text-sm font-semibold hover:bg-slate-100 active:scale-[0.99]
                 transition-all duration-150"
             >
-              View Performance Report →
+              See Outcome →
             </button>
           </div>
         )}

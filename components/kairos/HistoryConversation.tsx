@@ -176,10 +176,10 @@ export default function HistoryConversation({
         {activeQuestion && (
           <div className="flex-shrink-0 px-6 py-4 bg-blue-50/70 border-b border-blue-100/60">
             <p className="text-xs font-medium text-blue-400 mb-1.5">
-              You: <span className="italic text-blue-600">"{activeQuestion.doctorQuestion}"</span>
+              You: <span className="italic text-blue-600">&ldquo;{activeQuestion.doctorQuestion}&rdquo;</span>
             </p>
             <p className="text-sm text-blue-900 leading-relaxed italic">
-              "{activeQuestion.patientResponse}"
+              &ldquo;{activeQuestion.patientResponse}&rdquo;
             </p>
           </div>
         )}

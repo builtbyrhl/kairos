@@ -67,7 +67,7 @@ export default function ReceptionPage() {
       const session     = createSession(encounter);
 
       dispatch({ type: 'INIT', session, patientCase, disease });
-      router.push('/patient');
+      router.push('/nurse-briefing');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate case.');
       setLoading(false);
