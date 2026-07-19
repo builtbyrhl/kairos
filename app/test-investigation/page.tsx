@@ -37,6 +37,7 @@ import type {
   ResolutionResult,
 }                               from "../../lib/engines/investigation";
 import type { HospitalState }   from "../../lib/engines/hospital";
+import { notFound }             from "next/navigation";
 
 // ─── Display Helpers ──────────────────────────
 
@@ -189,6 +190,9 @@ function advanceTime(state: HospitalState, actions: number): HospitalState {
 // ─── Page ─────────────────────────────────────
 
 export default function TestInvestigationPage() {
+
+  // Developer-only diagnostic route. Never served in production builds.
+  if (process.env.NODE_ENV === "production") notFound();
 
   // ── Pipeline Setup ────────────────────────
   const disease = DiseaseRegistry.getById("stemi");
