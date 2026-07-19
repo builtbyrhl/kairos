@@ -9,7 +9,7 @@
 
 'use client';
 
-import { useEffect, useState }  from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter }            from 'next/navigation';
 import { useSession }           from '../../../lib/context/SessionContext';
 import { DiseaseRegistry }      from '../../../lib/data/diseases';
@@ -41,8 +41,15 @@ export default function ReceptionPage() {
   const [error, setError]       = useState<string | null>(null);
   const [clockTime, setClockTime] = useState(formatTime);
 
-  // If session already exists, go straight to patient room
+  // Set when the student starts a fresh case here, so the guard below
+  // doesn't hijack the intended reception → nurse-briefing navigation.
+  const startingHere = useRef(false);
+
+  // A session that already existed on arrival (e.g. returning mid-encounter)
+  // skips the reception screen and resumes in the patient room. A case just
+  // generated here is exempt — it continues to the nurse briefing.
   useEffect(() => {
+    if (startingHere.current) return;
     if (state.initialized && state.session) {
       router.replace('/patient');
     }
@@ -66,6 +73,7 @@ export default function ReceptionPage() {
       const encounter   = generateEncounter(patientCase);
       const session     = createSession(encounter);
 
+      startingHere.current = true;
       dispatch({ type: 'INIT', session, patientCase, disease });
       router.push('/nurse-briefing');
     } catch (err) {
